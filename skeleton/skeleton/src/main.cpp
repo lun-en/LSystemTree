@@ -34,6 +34,7 @@ void keyCallback(GLFWwindow* window, int key, int, int action, int);
 Context ctx;
 
 Material mTreeMaterial;
+Material mLeafMaterial;
 
 void loadMaterial() {
   
@@ -42,6 +43,12 @@ void loadMaterial() {
   mTreeMaterial.diffuse = glm::vec3(0.6f, 0.4f, 0.2f);  // Brown
   mTreeMaterial.specular = glm::vec3(0.1f, 0.1f, 0.1f);
   mTreeMaterial.shininess = 10.0f;
+
+  // Leaf material (green)
+  mLeafMaterial.ambient = glm::vec3(0.0f, 0.2f, 0.0f);
+  mLeafMaterial.diffuse = glm::vec3(0.1f, 0.6f, 0.1f);
+  mLeafMaterial.specular = glm::vec3(0.1f);
+  mLeafMaterial.shininess = 4.0f;
 
 }
 
@@ -58,21 +65,133 @@ void loadPrograms() {
   glUseProgram(0);
 }
 
-// Empty for now - We will put the L-System generation here later
  void loadModels() {
- 
   ctx.models.clear();
-}
+   // Use the cube model as our branch primitive 
+   Model* treeBranchModel = Model::fromObjectFile("../assets/models/cube/cube.obj");
+   // Optional: set default model matrix to identity (should already be)
+   // treeBranchModel->modelMatrix = glm::mat4(1.0f);
+  
+   // 2. Load a texture (for now, reuse the dice texture)
+   GLuint barkTexture = createTexture("../assets/models/cube/dice.jpg");
+   treeBranchModel->textures.push_back(barkTexture);
+
+   // 3. Store model in context
+   ctx.models.push_back(treeBranchModel);
+
+   // debug for texture model
+   std::cout << "Models loaded: " << ctx.models.size() << std::endl;
+   if (!ctx.models.empty()) {
+     std::cout << "Textures in model 0: " << ctx.models[0]->textures.size() << std::endl;
+   }
+ }
+
+ void buildLSystemTreeObjects(int branchModelIndex) {
+   //1. Generate the L-system string
+   LSystem lsys;
+   lsys.setAxiom("A");
+   lsys.addRule('A', "F[+A][-A]L"); 
+
+   int iterations = 3;  // 3-5 is okk
+   std::string sentence = lsys.generate(iterations);
+   std::cout << "L-system sentence length: " << sentence.size() << std::endl;
+
+   // 2. Turtle parameters
+   float branchLength = 1.0f;  // length of one segment
+   float branchRadius = 0.1f;  // thickness
+   float angleDeg = 25.0f;     // rotation angle for + and -
+
+   // Start at origin, move base down so tree is centered in view
+   glm::mat4 current = glm::mat4(1.0f);
+   current = glm::translate(current, glm::vec3(0.0f, -3.0f, 0.0f));
+
+   std::vector<glm::mat4> stack;
+
+   //3. Parse the L-system string
+   for (char c : sentence) {
+     switch (c) {
+       // Treat A as F
+       case 'F':
+       case 'A': {
+         // cube is roughly [-0.5,0.5] in all axes, so:
+         // 1) scale it to (radius x length x radius),
+         // 2) translate it up by half its length so its base sits at the turtle origin
+         glm::mat4 model = current;
+         model = model * glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f * branchLength, 0.0f));
+         model = model * glm::scale(glm::mat4(1.0f), glm::vec3(branchRadius, branchLength, branchRadius));
+
+         // Object instance for this segment
+         Object* obj = new Object(branchModelIndex, model);
+         obj->material = mTreeMaterial;  //brown material
+         obj->textureIndex = 0;          // use the first texture in the cube model (dice.jpg for now)
+         ctx.objects.push_back(obj);
+
+         // Move turtle up to the tip of the segment
+         current = current * glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, branchLength, 0.0f));
+         break;
+       }
+
+       case '+':
+         // Rotate around Z axis by +angle
+         current = current * glm::rotate(glm::mat4(1.0f), glm::radians(angleDeg), glm::vec3(0.0f, 0.0f, 1.0f));
+         break;
+
+       case '-':
+         // Rotate around Z axis by -angle
+         current = current * glm::rotate(glm::mat4(1.0f), glm::radians(-angleDeg), glm::vec3(0.0f, 0.0f, 1.0f));
+         break;
+
+       case '[':
+         // Save current transform with push
+         stack.push_back(current);
+         break;
+
+       case ']':
+         // Restore last transform with pop
+         if (!stack.empty()) {
+           current = stack.back();
+           stack.pop_back();
+         }
+         break;
+       case 'L': {
+         // Small, flat “leaf” using the same cube model, just scaled down
+         float leafSize = 0.3f;
+
+         glm::mat4 model = current;
+         // Put the leaf just above the branch origin
+         model = model * glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f * leafSize, 0.0f));
+         model = model * glm::scale(glm::mat4(1.0f), glm::vec3(leafSize, leafSize, leafSize));
+
+         Object* leaf = new Object(branchModelIndex, model);
+         leaf->material = mLeafMaterial;
+         leaf->textureIndex = 0;  // same texture for now (or you can later use a leaf texture)
+         ctx.objects.push_back(leaf);
+         break;
+       }
+
+
+       default:
+         // Ignore any other
+         break;
+     }
+   }
+ }
+
 
 
  void setupObjects() {
   
     ctx.objects.clear();
+   //the branch primitive   index 0
+   int branchModelIndex = 0;
+   // Build tree objects from the string
+   buildLSystemTreeObjects(branchModelIndex);
 
-   // Later, we will add:
-   // 1. The Ground Plane (we might bring this back later)
-   // 2. The L-System Tree   
+   // Later, you can add ground plane or other objects here as well.
+   std::cout << "Objects created: " << ctx.objects.size() << std::endl;
+
   }
+
 
 
 int main() {
