@@ -25,6 +25,8 @@
 #include "imgui_impl_opengl3.h"
 #include "imgui_impl_glfw.h"
 
+#include "LSystem.h"
+
 void initOpenGL();
 void resizeCallback(GLFWwindow* window, int width, int height);
 void keyCallback(GLFWwindow* window, int key, int, int action, int);
@@ -78,6 +80,17 @@ int main() {
   GLFWwindow* window = OpenGLContext::getWindow();
   // Update Title
   glfwSetWindowTitle(window, "Final Project: L-Systems");
+
+  // Quick test of the L-system 
+  {
+    LSystem sys;
+    sys.setAxiom("A");
+    // Simple example: A → F[+A][-A]
+    sys.addRule('A', "F[+A][-A]");
+
+    std::string result = sys.generate(3);
+    std::cout << "L-system result after 3 iterations: " << result << std::endl;
+  }
 
   // Init Camera helper
   Camera camera(glm::vec3(0, 5, 15));
@@ -187,7 +200,7 @@ void resizeCallback(GLFWwindow* window, int width, int height) {
 }
 
 void initOpenGL() {
-  // Initialize OpenGL context, details are wrapped in class.
+  // Initialize OpenGL context
 #ifdef __APPLE__
   // MacOS need explicit request legacy support
   OpenGLContext::createContext(21, GLFW_OPENGL_ANY_PROFILE);

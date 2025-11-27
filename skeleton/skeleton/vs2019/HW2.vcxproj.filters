@@ -56,9 +56,6 @@
     <ClCompile Include="..\src\Programs\light.cpp">
       <Filter>來源檔案\Programs</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\Programs\skybox.cpp">
-      <Filter>來源檔案\Programs</Filter>
-    </ClCompile>
     <ClCompile Include="..\extern\imgui\imgui.cpp">
       <Filter>來源檔案\imgui</Filter>
     </ClCompile>
@@ -76,6 +73,9 @@
     </ClCompile>
     <ClCompile Include="..\extern\imgui\imgui_widgets.cpp">
       <Filter>來源檔案\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\LSystem.cpp">
+      <Filter>來源檔案</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -142,6 +142,9 @@
     <ClInclude Include="..\extern\imgui\imstb_truetype.h">
       <Filter>標頭檔\imgui</Filter>
     </ClInclude>
+    <ClInclude Include="..\include\LSystem.h">
+      <Filter>標頭檔</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\assets\shaders\example.frag">
@@ -154,12 +157,6 @@
       <Filter>Shaders</Filter>
     </None>
     <None Include="..\assets\shaders\light.frag">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="..\assets\shaders\skybox.frag">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="..\assets\shaders\skybox.vert">
       <Filter>Shaders</Filter>
     </None>
   </ItemGroup>

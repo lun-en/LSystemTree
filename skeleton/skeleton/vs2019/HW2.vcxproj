@@ -200,12 +200,12 @@
     <ClCompile Include="..\extern\imgui\imgui_widgets.cpp" />
     <ClCompile Include="..\src\camera.cpp" />
     <ClCompile Include="..\src\gl_helper.cpp" />
+    <ClCompile Include="..\src\LSystem.cpp" />
     <ClCompile Include="..\src\model.cpp" />
     <ClCompile Include="..\src\opengl_context.cpp" />
     <ClCompile Include="..\src\main.cpp" />
     <ClCompile Include="..\src\Programs\example.cpp" />
     <ClCompile Include="..\src\Programs\light.cpp" />
-    <ClCompile Include="..\src\Programs\skybox.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\extern\glad\include\glad\gl.h" />
@@ -225,6 +225,7 @@
     <ClInclude Include="..\include\camera.h" />
     <ClInclude Include="..\include\context.h" />
     <ClInclude Include="..\include\gl_helper.h" />
+    <ClInclude Include="..\include\LSystem.h" />
     <ClInclude Include="..\include\model.h" />
     <ClInclude Include="..\include\opengl_context.h" />
     <ClInclude Include="..\include\program.h" />
@@ -235,8 +236,6 @@
     <None Include="..\assets\shaders\example.vert" />
     <None Include="..\assets\shaders\light.frag" />
     <None Include="..\assets\shaders\light.vert" />
-    <None Include="..\assets\shaders\skybox.frag" />
-    <None Include="..\assets\shaders\skybox.vert" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -45,7 +45,7 @@ class LightProgram : public Program {
   void doMainLoop() override;
 };
 
-class SkyboxProgram : public Program {
+/* class SkyboxProgram : public Program {
  public:
   SkyboxProgram(Context *ctx) : Program(ctx) {
     vertProgramFile = "../assets/shaders/skybox.vert";
@@ -53,4 +53,4 @@ class SkyboxProgram : public Program {
   }
   bool load() override;
   void doMainLoop() override;
-};
+};*/
