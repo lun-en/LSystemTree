@@ -3,6 +3,7 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include<cmath>
 
 #include "stb_image.h"
 #include <GLFW/glfw3.h>
@@ -36,6 +37,7 @@ Context ctx;
 Material mTreeMaterial;
 Material mLeafMaterial;
 
+
 void loadMaterial() {
   
     // A basic brown/wood material for the tree
@@ -65,132 +67,216 @@ void loadPrograms() {
   glUseProgram(0);
 }
 
+void appendFrustumSegment(Model* model, float length, float radiusBottom, float radiusTop, const glm::mat4& transform, int radialSegments) {
+  // build independent triangles (no shared vertices)
+  // For each side, we create 2 triangles = 6 vertices.
+  const float TWO_PI = 6.28318530718f;
+
+  for (int i = 0; i < radialSegments; ++i) {
+    float t0 = static_cast<float>(i) / radialSegments;
+    float t1 = static_cast<float>(i + 1) / radialSegments;
+
+    float angle0 = t0 * TWO_PI;
+    float angle1 = t1 * TWO_PI;
+
+    // Positions in LOCAL space of the frustum
+    glm::vec3 p0b(radiusBottom * std::cos(angle0), 0.0f, radiusBottom * std::sin(angle0));  // bottom ring, segment i
+    glm::vec3 p1b(radiusBottom * std::cos(angle1), 0.0f, radiusBottom * std::sin(angle1));  // bottom ring, segment i+1
+
+    glm::vec3 p0t(radiusTop * std::cos(angle0), length, radiusTop * std::sin(angle0));  // top ring
+    glm::vec3 p1t(radiusTop * std::cos(angle1), length, radiusTop * std::sin(angle1));
+
+    // Approximate normal direction using the mid-angle (good enough)
+    float angleMid = 0.5f * (angle0 + angle1);
+    glm::vec3 localNormal(std::cos(angleMid), 0.0f, std::sin(angleMid));
+
+    // Transform positions to WORLD space
+    glm::vec4 tp0b = transform * glm::vec4(p0b, 1.0f);
+    glm::vec4 tp1b = transform * glm::vec4(p1b, 1.0f);
+    glm::vec4 tp0t = transform * glm::vec4(p0t, 1.0f);
+    glm::vec4 tp1t = transform * glm::vec4(p1t, 1.0f);
+
+    // Transform normal: use upper-left 3x3 of transform
+    glm::mat3 normalMatrix = glm::mat3(transform);
+    glm::vec3 worldNormal = glm::normalize(normalMatrix * localNormal);
+
+    // Simple UVs along circumference (t) and height (v = 0..1)
+    float u0 = t0;
+    float u1 = t1;
+    float v0 = 0.0f;
+    float v1 = 1.0f;
+
+    auto pushVertex = [&](const glm::vec4& pos, float u, float v) {
+      model->positions.push_back(pos.x);
+      model->positions.push_back(pos.y);
+      model->positions.push_back(pos.z);
+
+      model->normals.push_back(worldNormal.x);
+      model->normals.push_back(worldNormal.y);
+      model->normals.push_back(worldNormal.z);
+
+      model->texcoords.push_back(u);
+      model->texcoords.push_back(v);
+
+      model->numVertex++;
+    };
+
+    // Triangle 1: p0b, p0t, p1t
+    pushVertex(tp0b, u0, v0);
+    pushVertex(tp0t, u0, v1);
+    pushVertex(tp1t, u1, v1);
+
+    // Triangle 2: p0b, p1t, p1b
+    pushVertex(tp0b, u0, v0);
+    pushVertex(tp1t, u1, v1);
+    pushVertex(tp1b, u1, v0);
+  }
+}
+
+
+Model* buildTreeModelFromLSystem();
+// helper to append one frustum segment into a Model (drawBranchSegment)
+void appendFrustumSegment(Model* model, float length, float radiusBottom, float radiusTop, const glm::mat4& transform,
+                          int radialSegments);
+
+struct TurtleState {
+  glm::mat4 transform;
+  float radius;
+  float length;
+  int depth;
+};
+
+Model* buildTreeModelFromLSystem() {
+  Model* model = new Model();
+  model->positions.clear();
+  model->normals.clear();
+  model->texcoords.clear();
+  model->textures.clear();
+  model->numVertex = 0;
+ 
+
+  // ----- 1. Generate L-system string -----
+  LSystem lsys;
+  lsys.setAxiom("A");
+  lsys.addRule('A', "F[+A][-A]");  // structure
+  //int iterations = 5;              // tweak later
+  int iterations = 4;
+
+  std::string sentence = lsys.generate(iterations);
+  std::cout << "L-system sentence length: " << sentence.size() << std::endl;
+
+  // ----- 2. Turtle parameters -----
+  float baseRadius = 0.5f;
+  float baseLength = 1.5f;
+  float radiusDecayF = 0.85f;
+  float lengthDecayF = 0.95f;
+  float branchRadiusDecay = 0.7f;
+  float branchAngleDeg = 25.0f;
+  int radialSegments = 12;  // how many sides on cylinder
+
+  // Initial turtle state
+  TurtleState current;
+  current.transform = glm::mat4(1.0f);
+  current.transform = glm::translate(current.transform, glm::vec3(0.0f, -3.0f, 0.0f));  // move base down
+  current.radius = baseRadius;
+  current.length = baseLength;
+  current.depth = 0;
+
+  std::vector<TurtleState> stack;
+
+  // ----- 3. Parse sentence & build geometry -----
+  for (char c : sentence) {
+    switch (c) {
+      case 'F':
+      case 'A': {
+        float rBottom = current.radius;
+        float rTop = current.radius * radiusDecayF;
+        float len = current.length;
+
+        if (rBottom > 0.01f && len > 0.05f) {
+          appendFrustumSegment(model, len, rBottom, rTop, current.transform, radialSegments);
+        }
+
+        // Move turtle to the tip in its local +Y direction
+        current.transform = current.transform * glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, len, 0.0f));
+
+        // Update radius & length for next segment
+        current.radius = rTop;
+        current.length = current.length * lengthDecayF;
+        current.depth += 1;
+        break;
+      }
+
+      case '+':
+        current.transform =
+            current.transform * glm::rotate(glm::mat4(1.0f), glm::radians(branchAngleDeg), glm::vec3(0.0f, 0.0f, 1.0f));
+        break;
+
+      case '-':
+        current.transform = current.transform *
+                            glm::rotate(glm::mat4(1.0f), glm::radians(-branchAngleDeg), glm::vec3(0.0f, 0.0f, 1.0f));
+        break;
+
+      case '[': {
+        // Save current state
+        stack.push_back(current);
+        // Shrink radius/length for new branch
+        current.radius *= branchRadiusDecay;
+        current.length *= lengthDecayF;
+        break;
+      }
+
+      case ']':
+        if (!stack.empty()) {
+          current = stack.back();
+          stack.pop_back();
+        }
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  // ----- 4. Load a bark texture for this model -----
+  GLuint barkTexture = createTexture("../assets/models/cube/dice.jpg");  // reuse for now
+  model->textures.push_back(barkTexture);
+
+  return model;
+}
+
+
+
  void loadModels() {
   ctx.models.clear();
-   // Use the cube model as our branch primitive 
-   Model* treeBranchModel = Model::fromObjectFile("../assets/models/cube/cube.obj");
-   // Optional: set default model matrix to identity (should already be)
-   // treeBranchModel->modelMatrix = glm::mat4(1.0f);
-  
-   // 2. Load a texture (for now, reuse the dice texture)
-   GLuint barkTexture = createTexture("../assets/models/cube/dice.jpg");
-   treeBranchModel->textures.push_back(barkTexture);
+   Model* treeModel = buildTreeModelFromLSystem();
+   ctx.models.push_back(treeModel);
 
-   // 3. Store model in context
-   ctx.models.push_back(treeBranchModel);
-
-   // debug for texture model
-   std::cout << "Models loaded: " << ctx.models.size() << std::endl;
+   //debugging
+   std::cout << "Models loaded: " << ctx.models.size() << "\n";
    if (!ctx.models.empty()) {
-     std::cout << "Textures in model 0: " << ctx.models[0]->textures.size() << std::endl;
+     std::cout << "Tree model vertices: " << ctx.models[0]->numVertex << "\n";
+     std::cout << "Tree textures: " << ctx.models[0]->textures.size() << "\n";
    }
  }
 
- void buildLSystemTreeObjects(int branchModelIndex) {
-   //1. Generate the L-system string
-   LSystem lsys;
-   lsys.setAxiom("A");
-   lsys.addRule('A', "F[+A][-A]L"); 
-
-   int iterations = 3;  // 3-5 is okk
-   std::string sentence = lsys.generate(iterations);
-   std::cout << "L-system sentence length: " << sentence.size() << std::endl;
-
-   // 2. Turtle parameters
-   float branchLength = 1.0f;  // length of one segment
-   float branchRadius = 0.1f;  // thickness
-   float angleDeg = 25.0f;     // rotation angle for + and -
-
-   // Start at origin, move base down so tree is centered in view
-   glm::mat4 current = glm::mat4(1.0f);
-   current = glm::translate(current, glm::vec3(0.0f, -3.0f, 0.0f));
-
-   std::vector<glm::mat4> stack;
-
-   //3. Parse the L-system string
-   for (char c : sentence) {
-     switch (c) {
-       // Treat A as F
-       case 'F':
-       case 'A': {
-         // cube is roughly [-0.5,0.5] in all axes, so:
-         // 1) scale it to (radius x length x radius),
-         // 2) translate it up by half its length so its base sits at the turtle origin
-         glm::mat4 model = current;
-         model = model * glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f * branchLength, 0.0f));
-         model = model * glm::scale(glm::mat4(1.0f), glm::vec3(branchRadius, branchLength, branchRadius));
-
-         // Object instance for this segment
-         Object* obj = new Object(branchModelIndex, model);
-         obj->material = mTreeMaterial;  //brown material
-         obj->textureIndex = 0;          // use the first texture in the cube model (dice.jpg for now)
-         ctx.objects.push_back(obj);
-
-         // Move turtle up to the tip of the segment
-         current = current * glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, branchLength, 0.0f));
-         break;
-       }
-
-       case '+':
-         // Rotate around Z axis by +angle
-         current = current * glm::rotate(glm::mat4(1.0f), glm::radians(angleDeg), glm::vec3(0.0f, 0.0f, 1.0f));
-         break;
-
-       case '-':
-         // Rotate around Z axis by -angle
-         current = current * glm::rotate(glm::mat4(1.0f), glm::radians(-angleDeg), glm::vec3(0.0f, 0.0f, 1.0f));
-         break;
-
-       case '[':
-         // Save current transform with push
-         stack.push_back(current);
-         break;
-
-       case ']':
-         // Restore last transform with pop
-         if (!stack.empty()) {
-           current = stack.back();
-           stack.pop_back();
-         }
-         break;
-       case 'L': {
-         // Small, flat “leaf” using the same cube model, just scaled down
-         float leafSize = 0.3f;
-
-         glm::mat4 model = current;
-         // Put the leaf just above the branch origin
-         model = model * glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f * leafSize, 0.0f));
-         model = model * glm::scale(glm::mat4(1.0f), glm::vec3(leafSize, leafSize, leafSize));
-
-         Object* leaf = new Object(branchModelIndex, model);
-         leaf->material = mLeafMaterial;
-         leaf->textureIndex = 0;  // same texture for now (or you can later use a leaf texture)
-         ctx.objects.push_back(leaf);
-         break;
-       }
-
-
-       default:
-         // Ignore any other
-         break;
-     }
-   }
- }
-
-
+ 
 
  void setupObjects() {
-  
     ctx.objects.clear();
-   //the branch primitive   index 0
-   int branchModelIndex = 0;
-   // Build tree objects from the string
-   buildLSystemTreeObjects(branchModelIndex);
+    
+    // Single object that uses the tree model at index 0
+    glm::mat4 identity(1.0f);
+    Object* treeObject = new Object(0, identity);
+    treeObject->material = mTreeMaterial;  //brown tree material
+    treeObject->textureIndex = 0;          // use first texture
 
-   // Later, you can add ground plane or other objects here as well.
-   std::cout << "Objects created: " << ctx.objects.size() << std::endl;
+    ctx.objects.push_back(treeObject);
 
-  }
+    //debug 
+    std::cout << "Objects: " << ctx.objects.size() << "\n";
+
+ }
 
 
 
