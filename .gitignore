@@ -10,3 +10,21 @@ compile_commands.json
 CTestTestfile.cmake
 _deps
 build
+
+README_og.md
+
+# CMake build output
+build/
+
+# Visual Studio / Windows junk
+.vs/
+*.user
+*.suo
+*.pdb
+*.obj
+*.ilk
+*.tlog
+*.log
+Debug/
+Release/
+x64/

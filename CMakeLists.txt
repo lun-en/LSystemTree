@@ -2,20 +2,12 @@ cmake_minimum_required(VERSION 3.11 FATAL_ERROR)
 project(OpenGLTemplate CXX)
 
 #===========================================================================================
-# OPTIONAL LIBRARiES
-#
-# The following libraries can be pulled down and added to the project by turnning the
-# desired options on. Open an issue for additional default support.
-# See: https://github.com/Hoshiningen/OpenGL-Template/issues
+# OPTIONAL LIBRARIES
 
-set(ENABLE_ASSIMP   ON CACHE BOOL "Add Open Asset Import Library (assimp) to the project" FORCE)
+set(ENABLE_ASSIMP ON CACHE BOOL "Add Open Asset Import Library (assimp) to the project" FORCE)
 
 #===========================================================================================
 # GLAD CONFIGURATION
-#
-# Configure GLAD loader generation variables (lines below pulled from the GLAD top-level
-# CMakeLists.txt file, with slight modifications.
-# Refer to https://github.com/Dav1dde/glad for more information)
 
 set(GLAD_OUT_DIR        "${CMAKE_CURRENT_BINARY_DIR}" CACHE STRING "Output directory" FORCE)
 set(GLAD_PROFILE        "core" CACHE STRING "OpenGL profile" FORCE)
@@ -36,9 +28,17 @@ set(SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/source)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
-set(sources ${SOURCE_DIR}/main.cpp)
+# ---- Sources (STEP 9: main + LSystem only) ----
+set(sources
+    ${SOURCE_DIR}/main.cpp
+    ${SOURCE_DIR}/LSystem.cpp
+    ${SOURCE_DIR}/TreeGen.cpp
+)
 
-add_executable(opengl-template ${sources} ${includes})
+add_executable(opengl-template ${sources})
+
+# Make sure we can include headers like "LSystem.h" from source/
+target_include_directories(opengl-template PRIVATE ${SOURCE_DIR})
 
 # Perform dependency linkage
 include(${CMAKE_DIR}/LinkGLFW.cmake)
@@ -47,16 +47,20 @@ LinkGLFW(opengl-template PRIVATE)
 include(${CMAKE_DIR}/LinkGLAD.cmake)
 LinkGLAD(opengl-template PRIVATE)
 
+include(${CMAKE_DIR}/LinkGLM.cmake)
+LinkGLM(opengl-template PRIVATE)
+
 find_package(OpenGL REQUIRED)
 if (OpenGL_FOUND)
-    target_include_directories(opengl-template PRIVATE ${OPENGL_INCLDUE_DIRS})
+    # NOTE: the original template had a typo OPENGL_INCLDUE_DIRS. This is the correct variable.
+    target_include_directories(opengl-template PRIVATE ${OPENGL_INCLUDE_DIRS})
     target_link_libraries(opengl-template PRIVATE ${OPENGL_LIBRARIES})
 else()
     message(FATAL_ERROR "OpenGL was not found on the system")
 endif()
 
 # Handle the optional libraries
-if (${ENABLE_ASSIMP})
+if (ENABLE_ASSIMP)
     include(${CMAKE_DIR}/LinkASSIMP.cmake)
     LinkASSIMP(opengl-template PRIVATE)
 endif()
