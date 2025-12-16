@@ -90,8 +90,21 @@ int main() {
 
     // ---- Build tree geometry (CPU) ----
     TreeParams params;
-    params.iterations = 4;
-    params.addSpheres = true; // set false if you want simpler first render
+    params.iterations = 5;
+    params.seed = 1337;
+    params.addSpheres = true;
+
+    params.branchAngleDeg = 22.0f;
+    params.angleJitterDeg = 10.0f;
+    params.lengthJitterFrac = 0.15f;
+    params.radiusJitterFrac = 0.10f;
+
+    params.usePhyllotaxisRoll = true;
+    params.phyllotaxisDeg = 137.5f;
+    params.branchRollJitterDeg = 20.0f;
+
+    // keep OFF for now
+    params.enableTropism = false;
 
     std::vector<VertexPN> verts = BuildTreeVertices(params);
     std::cout << "Tree vertices: " << verts.size() << "\n";
@@ -175,7 +188,10 @@ int main() {
         glClearColor(0.06f, 0.06f, 0.08f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        glm::mat4 model(1.0f);
+        //rotate model constantly
+        float t = (float)glfwGetTime();
+        glm::mat4 model = glm::rotate(glm::mat4(1.0f), t * 0.25f, glm::vec3(0, 1, 0));
+
         glm::mat4 view = glm::lookAt(camPos, camTarget, glm::vec3(0, 1, 0));
         float aspect = (float)gWidth / (float)gHeight;
         glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 200.0f);

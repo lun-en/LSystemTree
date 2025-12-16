@@ -9,6 +9,10 @@ LSystem::LSystem() : m_axiom("") {
     m_rng = std::mt19937(rd());
 }
 
+void LSystem::setSeed(std::uint32_t seed) {
+    m_rng.seed(seed);
+}
+
 void LSystem::setAxiom(const std::string& axiom) {
     m_axiom = axiom; //starting axiom
 }

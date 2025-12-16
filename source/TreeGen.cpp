@@ -2,6 +2,10 @@
 #include "TreeGen.h"
 #include "LSystem.h"
 
+#include <random>
+#include <cstdint>
+#include <algorithm>
+
 #include <cmath>
 #include <vector>
 #include <glm/gtc/matrix_transform.hpp>
@@ -116,10 +120,42 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
 {
     std::vector<VertexPN> verts;
 
-    // 1) L-system
+    // RNG for interpreter-side jitter (separate from L-system RNG)
+    std::mt19937 rng(p.seed);
+    auto rand01 = [&]() -> float {
+        std::uniform_real_distribution<float> d(0.0f, 1.0f);
+        return d(rng);
+    };
+    auto randRange = [&](float a, float b) -> float {
+        std::uniform_real_distribution<float> d(a, b);
+        return d(rng);
+    };
+    auto jitterFrac = [&](float frac) -> float {
+        // returns multiplier in [1-frac, 1+frac]
+        return 1.0f + randRange(-frac, +frac);
+    };
+
+    // 1) L-system (deciduous-ish, stochastic, 3D tokens)
+    // Convention:
+    //   X = bud (rewrites, not drawn)
+    //   F = draw wood + advance
+    //   + - = yaw
+    //   & ^ = pitch
+    //   \ / = roll
     LSystem lsys;
-    lsys.setAxiom("A");
-    lsys.addRule('A', "F[+A][-A]");
+    lsys.setSeed(p.seed);
+    lsys.setAxiom("X");
+
+    // A small stochastic rule set:
+    // - some extend the trunk more
+    // - some branch asymmetrically
+    // - some terminate early
+    lsys.addRule('X', "F[+X][-X]FX", 1.00f);
+    lsys.addRule('X', "F[+&X]F[-^X]X", 0.85f);
+    lsys.addRule('X', "F\\[+X]F/[-X]FX", 0.65f); // roll changes branch plane (note: '\\' in string)
+    lsys.addRule('X', "FFX", 0.50f);            // occasional longer trunk run
+    lsys.addRule('X', "", 0.25f);               // termination
+
     std::string sentence = lsys.generate(p.iterations);
 
     // 2) Turtle init
@@ -132,44 +168,139 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
     std::vector<TurtleState> stack;
     stack.reserve(2048);
 
+    std::uint32_t branchIndex = 0;
+
+    // Helper: apply a local-space rotation (post-multiply)
+    auto rotateLocal = [&](float radians, const glm::vec3& localAxis) {
+        cur.transform = cur.transform * glm::rotate(glm::mat4(1.0f), radians, localAxis);
+    };
+
+    // Helper: optional tropism (kept OFF by default)
+    auto applyTropism = [&]() {
+        if (!p.enableTropism) return;
+
+        glm::vec3 target = glm::normalize(p.tropismDir);
+        if (glm::length(target) < 1e-6f) return;
+
+        // Current heading is local +Y in world space
+        glm::vec3 heading = glm::normalize(glm::vec3(cur.transform * glm::vec4(0, 1, 0, 0)));
+        glm::vec3 axis = glm::cross(heading, target);
+        float axisLen = glm::length(axis);
+        if (axisLen < 1e-6f) return;
+        axis /= axisLen;
+
+        float angle = p.tropismStrength;
+        // rotate around the turtle's current position (so translation doesn't orbit around origin)
+        glm::vec3 pos = glm::vec3(cur.transform[3]);
+        glm::mat4 T = glm::translate(glm::mat4(1.0f), pos);
+        glm::mat4 Ti = glm::translate(glm::mat4(1.0f), -pos);
+        glm::mat4 R = glm::rotate(glm::mat4(1.0f), angle, axis);
+        cur.transform = T * R * Ti * cur.transform;
+    };
+
     // 3) Interpret
     for (char c : sentence) {
         switch (c) {
-        case 'F':
-        case 'A': {
-            float rBottom = cur.radius;
-            float rTop = cur.radius * p.radiusDecayF;
-            float len = cur.length;
+        case 'F': {
+            // jittered segment
+            float len = cur.length * jitterFrac(p.lengthJitterFrac);
+            float rBottom = cur.radius * jitterFrac(p.radiusJitterFrac);
 
-            if (rBottom > 0.01f && len > 0.05f) {
-                if (p.addSpheres) {
-                    appendSphere(verts, rBottom, cur.transform, p.sphereLatSegments, p.sphereLonSegments);
-                }
-                appendFrustumSegment(verts, len, rBottom, rTop, cur.transform, p.radialSegments);
+            if (rBottom <= p.minRadius || len <= p.minLength) {
+                // Still advance a little to avoid tight self-intersections in dense strings
+                cur.transform = cur.transform * glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, len, 0.0f));
+                cur.depth += 1;
+                break;
             }
 
+            float rTop = (cur.radius * p.radiusDecayF) * jitterFrac(p.radiusJitterFrac);
+
+            if (p.addSpheres) {
+                appendSphere(verts, rBottom, cur.transform, p.sphereLatSegments, p.sphereLonSegments);
+            }
+            appendFrustumSegment(verts, len, rBottom, rTop, cur.transform, p.radialSegments);
+
+            // advance along local +Y
             cur.transform = cur.transform * glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, len, 0.0f));
+
+            // decay
             cur.radius = rTop;
             cur.length = cur.length * p.lengthDecayF;
             cur.depth += 1;
+
+            // optional curvature
+            applyTropism();
             break;
         }
-        case '+':
-            cur.transform = cur.transform * glm::rotate(glm::mat4(1.0f),
-                glm::radians(p.branchAngleDeg), glm::vec3(0.0f, 0.0f, 1.0f));
+
+        case 'X':
+            // bud symbol: does not draw, just exists for rewriting
             break;
-        case '-':
-            cur.transform = cur.transform * glm::rotate(glm::mat4(1.0f),
-                glm::radians(-p.branchAngleDeg), glm::vec3(0.0f, 0.0f, 1.0f));
+
+            // Yaw around local Z (matches your existing convention)
+        case '+': {
+            float a = glm::radians(p.branchAngleDeg + randRange(-p.angleJitterDeg, +p.angleJitterDeg));
+            rotateLocal(a, glm::vec3(0, 0, 1));
             break;
-        case '[':
+        }
+        case '-': {
+            float a = glm::radians(-(p.branchAngleDeg + randRange(-p.angleJitterDeg, +p.angleJitterDeg)));
+            rotateLocal(a, glm::vec3(0, 0, 1));
+            break;
+        }
+
+                // Pitch around local X
+        case '&': {
+            float a = glm::radians(p.branchAngleDeg + randRange(-p.angleJitterDeg, +p.angleJitterDeg));
+            rotateLocal(a, glm::vec3(1, 0, 0));
+            break;
+        }
+        case '^': {
+            float a = glm::radians(-(p.branchAngleDeg + randRange(-p.angleJitterDeg, +p.angleJitterDeg)));
+            rotateLocal(a, glm::vec3(1, 0, 0));
+            break;
+        }
+
+                // Roll around heading (local +Y)
+        case '\\': {
+            float a = glm::radians(p.branchAngleDeg + randRange(-p.angleJitterDeg, +p.angleJitterDeg));
+            rotateLocal(a, glm::vec3(0, 1, 0));
+            break;
+        }
+        case '/': {
+            float a = glm::radians(-(p.branchAngleDeg + randRange(-p.angleJitterDeg, +p.angleJitterDeg)));
+            rotateLocal(a, glm::vec3(0, 1, 0));
+            break;
+        }
+
+        case '|': {
+            rotateLocal(glm::radians(180.0f), glm::vec3(0, 0, 1));
+            break;
+        }
+
+        case '[': {
             stack.push_back(cur);
+
+            // branch thickness/length reduction when entering a branch
             cur.radius *= p.branchRadiusDecay;
             cur.length *= p.lengthDecayF;
+
+            // distribute branch planes around trunk
+            if (p.usePhyllotaxisRoll) {
+                float roll = p.phyllotaxisDeg * float(branchIndex++);
+                roll += randRange(-p.branchRollJitterDeg, +p.branchRollJitterDeg);
+                rotateLocal(glm::radians(roll), glm::vec3(0, 1, 0));
+            }
             break;
+        }
+
         case ']':
-            if (!stack.empty()) { cur = stack.back(); stack.pop_back(); }
+            if (!stack.empty()) {
+                cur = stack.back();
+                stack.pop_back();
+            }
             break;
+
         default:
             break;
         }

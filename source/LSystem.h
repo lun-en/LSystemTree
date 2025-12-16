@@ -4,6 +4,7 @@
 #include <random>
 #include <string>
 #include <vector>
+#include <cstdint> 
 
 // A single production rule: X -> successor with a given probability
 struct LRule {
@@ -25,6 +26,9 @@ public:
 
 	// Remove all rules
 	void clearRules();
+
+	// Seed control for reproducible stochastic rewriting
+	void setSeed(std::uint32_t seed);
 
 	// Generate the final string after `iterations` parallel rewrites
 	std::string generate(int iterations) const;
