@@ -257,15 +257,39 @@ This clean separation makes it easy to:
 
 ---
 
-# Where to Improve Next
+# TODO
 
-Now that a working tree renders, common next improvements are:
+- Tree Generation improvements:
+  - Phase 1 — Make the turtle truly 3D (core capability)
+  - Phase 2 — Separate “bud/growth” from “draw wood”
+  - Phase 3 — Replace the single deterministic rule with a small stochastic rule set
+  - Phase 4 — Add controlled randomness in interpretation (angle/length/radius jitter)
+  - Phase 5 — Add branch distribution around the trunk (phyllotaxis / divergence)
+  - (OPTIONAL) Phase 6 — Add tropism (gravity/light bias) for natural curvature
+  - (OPTIONAL) Phase 7 — Polish: termination, depth rules, and “species presets”
+- Shading, Texturing, Mapping.
+- Foliage Implementation
+- Prompting Tree Recipe using an LLM (likely a chatgpt wrapper/bot)
 
-- Better branch normals (smooth shading, correct frustum normals)
-- Branch caps (closing ends) and more organic tapering
-- More expressive grammar (add symbols for different branch types)
-- Random/stochastic rules (use `probability` weights)
-- Camera controls (WASD + mouse look)
-- Bark texture + UV mapping improvements
-- Leaves (instanced quads, billboards, or small meshes)
+---
+
+# References you can cite in README
+
+These are some relevant sources:
+
+- Prusinkiewicz & Lindenmayer, The Algorithmic Beauty of Plants (classic reference for L-systems, 3D turtle interpretation, stochasticity discussion). 
+Algorithmic Botany
+
+- Colby CS151 “3D Turtle Notes” (clear mapping of yaw/pitch/roll operators for 3D turtle interpretation). 
+cs.colby.edu
+
+- TouchDesigner LSystem documentation (tropism operator and the idea that thinner/longer parts bend more). 
+Derivative
++1
+
+- Okabe (Royal Society Open Science / Scientific Reports) and Smith College phyllotaxis page for the golden angle (~137.5°) as a common divergence angle in phyllotaxis. 
+Royal Society Publishing
++2
+Nature
++2e
 
