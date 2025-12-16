@@ -90,21 +90,39 @@ int main() {
 
     // ---- Build tree geometry (CPU) ----
     TreeParams params;
-    params.iterations = 5;
+    params.iterations = 12;
     params.seed = 1337;
     params.addSpheres = true;
 
     params.branchAngleDeg = 22.0f;
     params.angleJitterDeg = 10.0f;
-    params.lengthJitterFrac = 0.15f;
+    params.lengthJitterFrac = 0.12f;
     params.radiusJitterFrac = 0.10f;
 
     params.usePhyllotaxisRoll = true;
     params.phyllotaxisDeg = 137.5f;
     params.branchRollJitterDeg = 20.0f;
 
-    // keep OFF for now
-    params.enableTropism = false;
+    params.baseRadius = 0.35f;
+    params.baseLength = 1.6f;
+
+    params.enableBranchSkipping = true;
+    params.branchSkipStartDepth = 6;
+    params.branchSkipMaxProb = 0.35f;
+    params.minRadiusForBranch = 0.035f;
+    params.depthFullEffect = 10;
+
+    params.branchPitchMinDeg = 10.0f;
+    params.branchPitchMaxDeg = 35.0f;
+
+    params.enableTropism = true;
+    params.tropismDir = glm::vec3(0, -1, 0);
+    params.tropismStrength = 0.015f;
+    params.tropismThinBoost = 0.08f;
+
+    params.branchLengthDecay = 0.75f;
+    params.twigLengthBoost = 0.30f;
+    params.maxLenToRadius = 16.0f;
 
     std::vector<VertexPN> verts = BuildTreeVertices(params);
     std::cout << "Tree vertices: " << verts.size() << "\n";

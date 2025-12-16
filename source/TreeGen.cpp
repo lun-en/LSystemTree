@@ -9,12 +9,14 @@
 #include <cmath>
 #include <vector>
 #include <glm/gtc/matrix_transform.hpp>
+#include <iostream>
 
 struct TurtleState {
     glm::mat4 transform;
     float radius;
     float length;
-    int   depth;
+    int   depth;        // global-ish segment count along current path
+    int   localDepth;   // NEW: segments since the last '[' (branch start)
 };
 
 static void appendFrustumSegment(std::vector<VertexPN>& out,
@@ -134,6 +136,21 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
         // returns multiplier in [1-frac, 1+frac]
         return 1.0f + randRange(-frac, +frac);
     };
+    // Depth scaling helper
+    auto saturate = [](float x) { return glm::clamp(x, 0.0f, 1.0f); };
+
+    auto depthT = [&](int depth) {
+        return saturate(float(depth) / float(std::max(1, p.depthFullEffect)));
+    };
+
+    // Use depth to scale angles/jitter down as we get into twigs
+    auto angleWithDepth = [&](float baseDeg, int depth) {
+        float t = depthT(depth);
+        float scaled = glm::mix(baseDeg, baseDeg * 0.60f, t); // twigs: smaller angles
+        float jitter = glm::mix(p.angleJitterDeg, p.angleJitterDeg * 0.40f, t);
+        return glm::radians(scaled + randRange(-jitter, +jitter));
+    };
+
 
     // 1) L-system (deciduous-ish, stochastic, 3D tokens)
     // Convention:
@@ -146,17 +163,41 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
     lsys.setSeed(p.seed);
     lsys.setAxiom("X");
 
-    // A small stochastic rule set:
-    // - some extend the trunk more
-    // - some branch asymmetrically
-    // - some terminate early
-    lsys.addRule('X', "F[+X][-X]FX", 1.00f);
-    lsys.addRule('X', "F[+&X]F[-^X]X", 0.85f);
-    lsys.addRule('X', "F\\[+X]F/[-X]FX", 0.65f); // roll changes branch plane (note: '\\' in string)
-    lsys.addRule('X', "FFX", 0.50f);            // occasional longer trunk run
-    lsys.addRule('X', "", 0.25f);               // termination
+    // X = trunk bud (rarely terminates)
+    lsys.addRule('X', "F[+Y][-Y]X", 1.20f);
+    lsys.addRule('X', "F[+Y]X", 0.80f);
+    lsys.addRule('X', "F[-Y]X", 0.80f);
+    lsys.addRule('X', "FFX", 0.55f);
+    lsys.addRule('X', "FX", 0.90f);   // keep growing trunk
+    lsys.addRule('X', "", 0.01f);   // VERY rare termination
+
+    // Y = branch bud (terminates sometimes, but not constantly)
+    lsys.addRule('Y', "F[+Y][-Y]Y", 0.90f);
+    lsys.addRule('Y', "F[+Y]Y", 0.60f);
+    lsys.addRule('Y', "F[-Y]Y", 0.60f);
+    lsys.addRule('Y', "FY", 1.00f);
+    lsys.addRule('Y', "FFY", 0.35f);
+    lsys.addRule('Y', "F", 0.50f);   // finish with one segment sometimes
+    lsys.addRule('Y', "", 0.05f);   // rare termination (NOT ~1.0)
 
     std::string sentence = lsys.generate(p.iterations);
+
+    // Print Stats
+    std::cout << "seed=" << p.seed
+        << " iter=" << p.iterations
+        << " enableSkip=" << p.enableBranchSkipping
+        << " sentenceLen=" << sentence.size()
+        << "\n";
+
+    size_t countF = 0, countX = 0, countY = 0, countBrack = 0;
+    for (char c : sentence) {
+        if (c == 'F') ++countF;
+        else if (c == 'X') ++countX;
+        else if (c == 'Y') ++countY;
+        else if (c == '[') ++countBrack;
+    }
+    std::cout << "F=" << countF << " X=" << countX << " Y=" << countY
+        << " [=" << countBrack << "\n";
 
     // 2) Turtle init
     TurtleState cur;
@@ -164,11 +205,14 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
     cur.radius = p.baseRadius;
     cur.length = p.baseLength;
     cur.depth = 0;
+    cur.localDepth = 0;
 
     std::vector<TurtleState> stack;
     stack.reserve(2048);
 
     std::uint32_t branchIndex = 0;
+
+    std::cout << "[TreeGen] BUILD MARKER: 2025-12-17 A\n";
 
     // Helper: apply a local-space rotation (post-multiply)
     auto rotateLocal = [&](float radians, const glm::vec3& localAxis) {
@@ -189,7 +233,10 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
         if (axisLen < 1e-6f) return;
         axis /= axisLen;
 
-        float angle = p.tropismStrength;
+        float thin01 = 1.0f - glm::clamp(cur.radius / std::max(1e-6f, p.baseRadius), 0.0f, 1.0f);
+        // thin01=0 near trunk, thin01->1 for thin branches
+        float angle = p.tropismStrength * (1.0f + p.tropismThinBoost * thin01);
+
         // rotate around the turtle's current position (so translation doesn't orbit around origin)
         glm::vec3 pos = glm::vec3(cur.transform[3]);
         glm::mat4 T = glm::translate(glm::mat4(1.0f), pos);
@@ -199,21 +246,37 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
     };
 
     // 3) Interpret
-    for (char c : sentence) {
+    for (size_t i = 0; i < sentence.size(); ++i) {
+        char c = sentence[i];
         switch (c) {
         case 'F': {
             // jittered segment
             float len = cur.length * jitterFrac(p.lengthJitterFrac);
             float rBottom = cur.radius * jitterFrac(p.radiusJitterFrac);
+            float rTop = (cur.radius * p.radiusDecayF) * jitterFrac(p.radiusJitterFrac);
 
+            float t = depthT(cur.depth);
+
+            // shorten twigs progressively with depth
+            len *= glm::mix(1.0f, 1.0f - p.twigLengthBoost, t);
+
+            // prevent tiny-radius branches from getting huge length
+            len = std::min(len, p.maxLenToRadius * cur.radius);
+
+            // If too small to draw, still advance AND decay so twigs don't stay long forever.
             if (rBottom <= p.minRadius || len <= p.minLength) {
-                // Still advance a little to avoid tight self-intersections in dense strings
                 cur.transform = cur.transform * glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, len, 0.0f));
+
+                cur.radius = rTop;
+                cur.length = cur.length * p.lengthDecayF;
+                cur.length *= glm::mix(1.0f, 1.0f - p.twigLengthBoost, t);
+
                 cur.depth += 1;
+                cur.localDepth += 1;
+
+                applyTropism();
                 break;
             }
-
-            float rTop = (cur.radius * p.radiusDecayF) * jitterFrac(p.radiusJitterFrac);
 
             if (p.addSpheres) {
                 appendSphere(verts, rBottom, cur.transform, p.sphereLatSegments, p.sphereLonSegments);
@@ -227,6 +290,7 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
             cur.radius = rTop;
             cur.length = cur.length * p.lengthDecayF;
             cur.depth += 1;
+            cur.localDepth += 1;
 
             // optional curvature
             applyTropism();
@@ -237,39 +301,41 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
             // bud symbol: does not draw, just exists for rewriting
             break;
 
+        case 'Y':
+            // bud symbol: does not draw, just exists for rewriting
+            break;
+
             // Yaw around local Z (matches your existing convention)
         case '+': {
-            float a = glm::radians(p.branchAngleDeg + randRange(-p.angleJitterDeg, +p.angleJitterDeg));
-            rotateLocal(a, glm::vec3(0, 0, 1));
+            float a = angleWithDepth(p.branchAngleDeg, cur.depth);
+            rotateLocal(+a, glm::vec3(0, 0, 1));
             break;
         }
         case '-': {
-            float a = glm::radians(-(p.branchAngleDeg + randRange(-p.angleJitterDeg, +p.angleJitterDeg)));
-            rotateLocal(a, glm::vec3(0, 0, 1));
+            float a = angleWithDepth(p.branchAngleDeg, cur.depth);
+            rotateLocal(-a, glm::vec3(0, 0, 1));
             break;
         }
-
                 // Pitch around local X
         case '&': {
-            float a = glm::radians(p.branchAngleDeg + randRange(-p.angleJitterDeg, +p.angleJitterDeg));
-            rotateLocal(a, glm::vec3(1, 0, 0));
+            float a = angleWithDepth(p.branchAngleDeg, cur.depth);
+            rotateLocal(+a, glm::vec3(1, 0, 0));
             break;
         }
         case '^': {
-            float a = glm::radians(-(p.branchAngleDeg + randRange(-p.angleJitterDeg, +p.angleJitterDeg)));
-            rotateLocal(a, glm::vec3(1, 0, 0));
+            float a = angleWithDepth(p.branchAngleDeg, cur.depth);
+            rotateLocal(-a, glm::vec3(1, 0, 0));
             break;
         }
-
                 // Roll around heading (local +Y)
         case '\\': {
-            float a = glm::radians(p.branchAngleDeg + randRange(-p.angleJitterDeg, +p.angleJitterDeg));
-            rotateLocal(a, glm::vec3(0, 1, 0));
+            float a = angleWithDepth(p.branchAngleDeg, cur.depth);
+            rotateLocal(+a, glm::vec3(0, 1, 0));
             break;
         }
         case '/': {
-            float a = glm::radians(-(p.branchAngleDeg + randRange(-p.angleJitterDeg, +p.angleJitterDeg)));
-            rotateLocal(a, glm::vec3(0, 1, 0));
+            float a = angleWithDepth(p.branchAngleDeg, cur.depth);
+            rotateLocal(-a, glm::vec3(0, 1, 0));
             break;
         }
 
@@ -279,11 +345,45 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
         }
 
         case '[': {
+            bool skip = false;
+
+            if (p.enableBranchSkipping && !stack.empty()) {
+                float t = 0.0f;
+                if (cur.localDepth >= p.branchSkipStartDepth) {
+                    t = glm::clamp(float(cur.localDepth - p.branchSkipStartDepth) / 4.0f, 0.0f, 1.0f);
+                }
+
+                float prob = t * p.branchSkipMaxProb;
+
+                if (cur.radius < p.minRadiusForBranch) {
+                    prob = std::max(prob, 0.60f);
+                }
+
+                if (rand01() < prob) skip = true;
+            }
+
+            if (skip) {
+                int nesting = 1;
+                while (i + 1 < sentence.size() && nesting > 0) {
+                    ++i;
+                    if (sentence[i] == '[') nesting++;
+                    else if (sentence[i] == ']') nesting--;
+                }
+                break;
+            }
+
+            // normal branch handling:
             stack.push_back(cur);
+            cur.localDepth = 0; // NEW: new branch starts here
 
             // branch thickness/length reduction when entering a branch
             cur.radius *= p.branchRadiusDecay;
-            cur.length *= p.lengthDecayF;
+            cur.length *= p.branchLengthDecay;
+
+            // NEW: pitch kick so branches spread in true 3D
+            float pitch = randRange(p.branchPitchMinDeg, p.branchPitchMaxDeg);
+            if (rand01() < 0.5f) pitch = -pitch;
+            rotateLocal(glm::radians(pitch), glm::vec3(1, 0, 0));
 
             // distribute branch planes around trunk
             if (p.usePhyllotaxisRoll) {
