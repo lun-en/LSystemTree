@@ -17,6 +17,7 @@ struct TurtleState {
     float length;
     int   depth;        // global-ish segment count along current path
     int   localDepth;   // NEW: segments since the last '[' (branch start)
+    int branchesAtNode;   // NEW
 };
 
 static void appendFrustumSegment(std::vector<VertexPN>& out,
@@ -163,22 +164,67 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
     lsys.setSeed(p.seed);
     lsys.setAxiom("X");
 
+    /*
     // X = trunk bud (rarely terminates)
-    lsys.addRule('X', "F[+Y][-Y]X", 1.20f);
-    lsys.addRule('X', "F[+Y]X", 0.80f);
-    lsys.addRule('X', "F[-Y]X", 0.80f);
-    lsys.addRule('X', "FFX", 0.55f);
-    lsys.addRule('X', "FX", 0.90f);   // keep growing trunk
+    lsys.addRule('X', "F[+A][-A]X", 1.20f);
+    lsys.addRule('X', "F[+A]X", 0.80f);
+    lsys.addRule('X', "F[-A]X", 0.80f);
+    //lsys.addRule('X', "FFX", 0.55f);
+    //lsys.addRule('X', "FX", 0.90f);   // keep growing trunk
     lsys.addRule('X', "", 0.01f);   // VERY rare termination
 
-    // Y = branch bud (terminates sometimes, but not constantly)
-    lsys.addRule('Y', "F[+Y][-Y]Y", 0.90f);
-    lsys.addRule('Y', "F[+Y]Y", 0.60f);
-    lsys.addRule('Y', "F[-Y]Y", 0.60f);
-    lsys.addRule('Y', "FY", 1.00f);
-    lsys.addRule('Y', "FFY", 0.35f);
-    lsys.addRule('Y', "F", 0.50f);   // finish with one segment sometimes
-    lsys.addRule('Y', "", 0.05f);   // rare termination (NOT ~1.0)
+    // reduce pure leader-shoot tendency
+    lsys.addRule('X', "FX", 0.35f);   // was 0.90
+    lsys.addRule('X', "FFX", 0.20f);   // was 0.55
+
+    // NEW: canopy handoff (NO X at the end)
+    // this converts the trunk tip into a branching "crown" instead of a needle
+    lsys.addRule('X', "F[+A][-A][&A][^A]A", 0.55f);
+    */
+
+    // X = trunk bud (builds trunk + major scaffolding branches)
+    // Keep some trunk extension, but make "branching while extending" dominate.
+    lsys.addRule('X', "F[+A][-A]X", 1.10f);
+    lsys.addRule('X', "F[+A][-A][&A][^A]X", 0.85f);
+    //lsys.addRule('X', "F[&Y][^Y]X", 0.33f);
+    //lsys.addRule('X', "F[\\Y][/Y]X", 0.33f);
+    lsys.addRule('X', "F[+Y][-Y][&Y][^Y]X", 0.33f); 
+    lsys.addRule('X', "F[\\Y][/Y][&Y][^Y]X", 0.33f);
+    lsys.addRule('X', "F[+Y][-Y]X", 0.33f);
+
+    // Rare “pure leader” (keep small or you get the needle)
+    lsys.addRule('X', "FX", 0.10f);
+    lsys.addRule('X', "FFX", 0.05f);
+
+    // --- CANOPY HANDOFF ---
+    // Instead of continuing as X forever, convert into a crown bud C.
+    // This still grows upward, but its growth is *branch-driven*.
+    lsys.addRule('X', "FC", 0.55f);
+    lsys.addRule('X', "F[+A][-A][&A][^A]C", 0.70f);
+
+    // A = newborn branch bud (guaranteed to produce at least 1 segment)
+    lsys.addRule('A', "FY", 1.0f);
+    lsys.addRule('A', "F[+Y]Y", 0.10f);  // was 0.40
+    lsys.addRule('A', "F[-Y]Y", 0.10f);  // was 0.40
+
+    // Y = branch bud (make sub-branching MUCH more common, and reduce early “stub” deaths)
+    lsys.addRule('Y', "FY", 1.00f);  // was 1.80 (too “stick-y”)
+    lsys.addRule('Y', "F[+Y]Y", 0.70f);  // was 0.40
+    lsys.addRule('Y', "F[-Y]Y", 0.70f);  // was 0.40
+    lsys.addRule('Y', "F[+Y][-Y]Y", 0.70f);  // was 0.18  (this makes the “real twig” look happen often)
+    lsys.addRule('Y', "FFY", 0.25f);  // keep some longer runs
+
+    lsys.addRule('Y', "F[&Y][^Y]Y", 0.15f);
+    lsys.addRule('Y', "F[\\Y][/Y]Y", 0.15f);   // adds 3D spread in the crown
+
+    // C = crown bud (keeps growing, but "puffs" into a canopy instead of a needle)
+    // Note: includes roll tokens so the crown fills 360 degrees over time.
+    lsys.addRule('C', "F[+Y][-Y][&Y][^Y]C", 0.90f);
+    lsys.addRule('C', "F[\\Y][/Y][&Y][^Y]C", 0.30f);
+    lsys.addRule('C', "F[+Y][-Y]C", 0.55f);
+    lsys.addRule('C', "F[\\Y][/Y]C", 0.35f);   // adds 3D spread in the crown
+    lsys.addRule('C', "FY", 0.20f);   // sometimes just feed into Y
+
 
     std::string sentence = lsys.generate(p.iterations);
 
@@ -206,6 +252,7 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
     cur.length = p.baseLength;
     cur.depth = 0;
     cur.localDepth = 0;
+    cur.branchesAtNode = 0;
 
     std::vector<TurtleState> stack;
     stack.reserve(2048);
@@ -215,9 +262,24 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
     std::cout << "[TreeGen] BUILD MARKER: 2025-12-17 A\n";
 
     // Helper: apply a local-space rotation (post-multiply)
-    auto rotateLocal = [&](float radians, const glm::vec3& localAxis) {
-        cur.transform = cur.transform * glm::rotate(glm::mat4(1.0f), radians, localAxis);
+    //auto rotateLocal = [&](float radians, const glm::vec3& localAxis) {
+    //    cur.transform = cur.transform * glm::rotate(glm::mat4(1.0f), radians, localAxis);
+    //};
+
+    auto rotateLocal = [&](float angle, const glm::vec3& localAxis) {
+        // rotate around the turtle's LOCAL axis (converted to world axis)
+        glm::vec3 pos = glm::vec3(cur.transform[3]);
+
+        // turn the requested local axis into a world-space axis using current orientation
+        glm::vec3 worldAxis = glm::normalize(glm::mat3(cur.transform) * localAxis);
+
+        glm::mat4 T = glm::translate(glm::mat4(1.0f), pos);
+        glm::mat4 Ti = glm::translate(glm::mat4(1.0f), -pos);
+        glm::mat4 R = glm::rotate(glm::mat4(1.0f), angle, worldAxis);
+
+        cur.transform = T * R * Ti * cur.transform;
     };
+
 
     // Helper: optional tropism (kept OFF by default)
     auto applyTropism = [&]() {
@@ -245,6 +307,36 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
         cur.transform = T * R * Ti * cur.transform;
     };
 
+    // Skip forward until the ']' that closes the *current* branch (one pop).
+    // Assumes we are inside at least one '[' (i.e., stack is not empty).
+    auto pruneCurrentBranch = [&](size_t& i) {
+        int nesting = 0;
+        while (i + 1 < sentence.size()) {
+            ++i;
+            char cc = sentence[i];
+            if (cc == '[') nesting++;
+            else if (cc == ']') {
+                if (nesting == 0) {
+                    // This closes the branch we are currently in.
+                    if (!stack.empty()) {
+                        cur = stack.back();
+                        stack.pop_back();
+                    }
+                    return;
+                }
+                nesting--;
+            }
+        }
+
+        // If we run off the end, just clear stack as a safe fallback.
+        if (!stack.empty()) {
+            cur = stack.front();
+            stack.clear();
+        }
+    };
+
+    size_t skippedBranches = 0;
+
     // 3) Interpret
     for (size_t i = 0; i < sentence.size(); ++i) {
         char c = sentence[i];
@@ -257,44 +349,52 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
 
             float t = depthT(cur.depth);
 
-            // shorten twigs progressively with depth
+            float maxLen = p.maxLenToRadius * rBottom;
+
+            // depth shortening stays the same
             len *= glm::mix(1.0f, 1.0f - p.twigLengthBoost, t);
 
-            // prevent tiny-radius branches from getting huge length
-            len = std::min(len, p.maxLenToRadius * cur.radius);
+            // enforce len/radius cap
+            len = std::min(len, maxLen);
 
-            // If too small to draw, still advance AND decay so twigs don't stay long forever.
-            if (rBottom <= p.minRadius || len <= p.minLength) {
-                cur.transform = cur.transform * glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, len, 0.0f));
+            // enforce a minimum length, but NEVER exceed the maxLen cap
+            len = std::max(len, std::min(p.minLength, maxLen));
 
-                cur.radius = rTop;
-                cur.length = cur.length * p.lengthDecayF;
-                cur.length *= glm::mix(1.0f, 1.0f - p.twigLengthBoost, t);
-
-                cur.depth += 1;
-                cur.localDepth += 1;
-
-                applyTropism();
-                break;
+            // Optional hard prune (STRUCTURAL), separate from draw cutoff
+            if (p.enableRadiusPruning && (rBottom <= p.pruneRadius)) {
+                if (!stack.empty()) {
+                    pruneCurrentBranch(i); // jump to matching ']' and pop
+                    break;
+                }
+                else {
+                    // trunk pruned: nothing meaningful left to draw
+                    // just stop advancing trunk segments
+                    break;
+                }
             }
 
-            if (p.addSpheres) {
-                appendSphere(verts, rBottom, cur.transform, p.sphereLatSegments, p.sphereLonSegments);
-            }
-            appendFrustumSegment(verts, len, rBottom, rTop, cur.transform, p.radialSegments);
+            // Draw cutoff (VISUAL) only
+            bool draw = (rBottom > p.minRadius);
 
-            // advance along local +Y
+            if (draw) {
+                if (p.addSpheres) {
+                    appendSphere(verts, rBottom, cur.transform, p.sphereLatSegments, p.sphereLonSegments);
+                }
+                appendFrustumSegment(verts, len, rBottom, rTop, cur.transform, p.radialSegments);
+            }
+
+            // ALWAYS advance + decay, even if not drawing
             cur.transform = cur.transform * glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, len, 0.0f));
-
-            // decay
             cur.radius = rTop;
             cur.length = cur.length * p.lengthDecayF;
             cur.depth += 1;
             cur.localDepth += 1;
+            cur.branchesAtNode = 0;
 
             // optional curvature
             applyTropism();
             break;
+
         }
 
         case 'X':
@@ -347,6 +447,13 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
         case '[': {
             bool skip = false;
 
+            // Only enforce spacing for *sub-branches* (inside a branch), not trunk-level branching.
+            if (!stack.empty() && cur.localDepth < p.minBranchSpacing)
+                skip = true;
+
+            // Per-node cap: don’t allow “spray” of many branches from the same spot
+            if (cur.branchesAtNode >= p.maxBranchesPerNode) skip = true;
+
             if (p.enableBranchSkipping && !stack.empty()) {
                 float t = 0.0f;
                 if (cur.localDepth >= p.branchSkipStartDepth) {
@@ -355,9 +462,9 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
 
                 float prob = t * p.branchSkipMaxProb;
 
-                if (cur.radius < p.minRadiusForBranch) {
-                    prob = std::max(prob, 0.60f);
-                }
+                //if (cur.radius < p.minRadiusForBranch) {
+                //    prob = std::max(prob, 0.60f);
+                //}
 
                 if (rand01() < prob) skip = true;
             }
@@ -369,28 +476,35 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
                     if (sentence[i] == '[') nesting++;
                     else if (sentence[i] == ']') nesting--;
                 }
+                skippedBranches++;
                 break;
             }
 
             // normal branch handling:
-            stack.push_back(cur);
-            cur.localDepth = 0; // NEW: new branch starts here
+            cur.branchesAtNode += 1;     // parent bookkeeping first
+            stack.push_back(cur);        // store parent WITH updated bookkeeping
+
+            // child branch starts fresh
+            cur.localDepth = 0;
+            cur.branchesAtNode = 0;
+            cur.depth = 0;               // IMPORTANT: don't inherit trunk depth
 
             // branch thickness/length reduction when entering a branch
             cur.radius *= p.branchRadiusDecay;
-            cur.length *= p.branchLengthDecay;
+            cur.length *= p.branchLengthDecay;   // IMPORTANT: use branchLengthDecay, not lengthDecayF
 
-            // NEW: pitch kick so branches spread in true 3D
+            // distribute branch planes around trunk  (MOVE THIS UP)
+            if (p.usePhyllotaxisRoll) {
+                float roll = p.phyllotaxisDeg * float(branchIndex++);
+                roll += randRange(-p.branchRollJitterDeg, +p.branchRollJitterDeg);
+                rotateLocal(glm::radians(roll), glm::vec3(0, 1, 0)); // roll around heading
+            }
+
+            // NEW: pitch kick so branches spread in true 3D  (MOVE THIS DOWN)
             float pitch = randRange(p.branchPitchMinDeg, p.branchPitchMaxDeg);
             if (rand01() < 0.5f) pitch = -pitch;
             rotateLocal(glm::radians(pitch), glm::vec3(1, 0, 0));
 
-            // distribute branch planes around trunk
-            if (p.usePhyllotaxisRoll) {
-                float roll = p.phyllotaxisDeg * float(branchIndex++);
-                roll += randRange(-p.branchRollJitterDeg, +p.branchRollJitterDeg);
-                rotateLocal(glm::radians(roll), glm::vec3(0, 1, 0));
-            }
             break;
         }
 
@@ -405,6 +519,8 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
             break;
         }
     }
+
+    std::cout << "skippedBranches=" << skippedBranches << "\n";
 
     return verts;
 }

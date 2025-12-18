@@ -51,6 +51,10 @@ struct TreeParams {
     float branchSkipMaxProb = 0.75f; // upper bound skip probability
     float minRadiusForBranch = 0.035f;
 
+    // NEW: prevent branch bunching
+    int   minBranchSpacing = 1;      // minimum number of F segments between branch-starts on the same path
+    int   maxBranchesPerNode = 4;    // cap how many '[' we allow before the next F
+
     // Depth scaling (0..1 over this depth range)
     int   depthFullEffect = 10;    // after this depth, depth-bias is at full strength
 
@@ -72,6 +76,10 @@ struct TreeParams {
 
     // NEW: hard cap to prevent “long noodles” when radius is tiny
     float maxLenToRadius = 12.0f;        // len <= maxLenToRadius * radius
+
+    // NEW: pruning control (separate from draw cutoff)
+    bool  enableRadiusPruning = false;  // start OFF to get twigs back
+    float pruneRadius = 0.0006f;        // much smaller than minRadius
 
 };
 
