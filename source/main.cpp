@@ -2,6 +2,7 @@
 #include <iostream>
 #include <vector>
 #include <cstddef>
+#include<string>
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -54,7 +55,8 @@ static GLuint LinkProgram(GLuint vs, GLuint fs) {
     return p;
 }
 
-int main() {
+//here in the declaration added the params : (int argc, char** argv)
+int main(int argc, char** argv) {
     if (!glfwInit()) {
         std::cerr << "glfwInit failed\n";
         return -1;
@@ -90,6 +92,30 @@ int main() {
 
     // ---- Build tree geometry (CPU) ----
     TreeParams params;
+
+    //NEW add the preset option
+    //choose preset from CLI argument
+    // Usage to make each tree:
+    //   opengl-template.exe deciduous
+    //   opengl-template.exe conifer
+    //   opengl-template.exe pine
+    //default preset for NOW
+    params.preset = TreePreset::Deciduous;
+
+    if (argc >= 2) {
+        std::string arg = argv[1]; 
+        if (arg == "deciduous") {
+            params.preset = TreePreset::Deciduous;
+
+        } else if (arg == "conifer" || arg == "pine") {
+            params.preset = TreePreset::Conifer;
+
+        } else {
+            std::cout << "Unknown preset: " << arg
+                    << " (use: deciduous | conifer | pine)\n";
+        }
+    }
+
     params.seed = 1337;
     params.addSpheres = true;
 
@@ -117,7 +143,7 @@ int main() {
 
     params.maxLenToRadius = 14.0f;   // fine
 
-    params.minBranchSpacing = 1;   // IMPORTANT: 2 will kill most of your grammar’s branches
+    params.minBranchSpacing = 1;   // IMPORTANT: 2 will kill most of your grammar's branches
     params.maxBranchesPerNode = 5;   // start generous
 
     params.branchRadiusDecay = 0.78f;   // optional but helps preserve twig thickness
@@ -128,20 +154,20 @@ int main() {
     params.angleJitterDeg = 7.0f;    // less random-looking noise
 
     params.lengthJitterFrac = 0.08f; // more consistent segment lengths
-    params.radiusJitterFrac = 0.06f; // less “sparkly” thickness noise
+    params.radiusJitterFrac = 0.06f; // less ï¿½sparklyï¿½ thickness noise
 
-    params.branchRollJitterDeg = 35.0f; // 90 makes distribution look chaotic; phyllotaxis already spreads 360°
+    params.branchRollJitterDeg = 35.0f; // 90 makes distribution look chaotic; phyllotaxis already spreads 360ï¿½
     params.branchPitchMinDeg = 15.0f;
     params.branchPitchMaxDeg = 60.0f;   // better 3D crown without relying on huge roll jitter
 
     params.branchLengthDecay = 0.72f;   // longer sub-branches than 0.55
-    params.twigLengthBoost = 0.15f;    // 0.30 shortens twigs a lot -> looks “fuzzy” and cramped
+    params.twigLengthBoost = 0.15f;    // 0.30 shortens twigs a lot -> looks ï¿½fuzzyï¿½ and cramped
 
     params.enableRadiusPruning = true;
     params.pruneRadius = 0.0010f;       // prune more of the ultra-fine structural recursion (reduces clutter)
 
     params.minRadius = 0.0016f;         // draw fewer micro-twigs
-    params.minLength = 0.010f;          // avoid tiny “hair” segments
+    params.minLength = 0.010f;          // avoid tiny ï¿½hairï¿½ segments
 
 
     std::vector<VertexPN> verts = BuildTreeVertices(params);

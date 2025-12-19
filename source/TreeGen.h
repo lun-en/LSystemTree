@@ -8,8 +8,19 @@ struct VertexPN {
     glm::vec3 pos;
     glm::vec3 normal;
 };
+//NEW: Tree presets
+enum class TreePreset
+{
+    Deciduous,
+    Conifer
+};
+
 
 struct TreeParams {
+    //Adding the preset, add this not affect the rest of the pipeline
+    TreePreset preset = TreePreset::Deciduous;
+
+
     int   iterations = 4;
 
     float baseRadius = 0.3f;
@@ -58,7 +69,7 @@ struct TreeParams {
     // Depth scaling (0..1 over this depth range)
     int   depthFullEffect = 10;    // after this depth, depth-bias is at full strength
 
-    // Make branches pop into true 3D at each branch start (helps “oak canopy” later too)
+    // Make branches pop into true 3D at each branch start (helps ï¿½oak canopyï¿½ later too)
     float branchPitchMinDeg = 10.0f; // pitch down/up range depends on your axis; this creates Z spread
     float branchPitchMaxDeg = 35.0f;
 
@@ -74,12 +85,13 @@ struct TreeParams {
     // NEW: make deep twigs shrink faster (depth-based)
     float twigLengthBoost = 0.30f;       // 0..1, higher = shorter twigs at high depth
 
-    // NEW: hard cap to prevent “long noodles” when radius is tiny
+    // NEW: hard cap to prevent ï¿½long noodlesï¿½ when radius is tiny
     float maxLenToRadius = 12.0f;        // len <= maxLenToRadius * radius
 
     // NEW: pruning control (separate from draw cutoff)
     bool  enableRadiusPruning = false;  // start OFF to get twigs back
     float pruneRadius = 0.0006f;        // much smaller than minRadius
+
 
 };
 

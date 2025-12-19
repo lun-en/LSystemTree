@@ -119,6 +119,110 @@ static void appendSphere(std::vector<VertexPN>& out,
     }
 }
 
+//NEW: helper function preset Grammar
+static void SetupDeciduousGrammar(LSystem& lsys, const TreeParams& p)
+{
+    //set the deciduoud Tree grammar
+    // setAxiom + addRule(...) + lo que sea necesario para el deciduous actual
+    
+    // 1) L-system (deciduous-ish, stochastic, 3D tokens)
+    // Convention:
+    //   X = bud (rewrites, not drawn)
+    //   F = draw wood + advance
+    //   + - = yaw
+    //   & ^ = pitch
+    //   \ / = roll
+    lsys.setSeed(p.seed);
+    lsys.setAxiom("L");
+
+    // Lower-trunk staging: denser scaffold for first ~6 segments, then handoff to X
+    // Also spreads 4 scaffolds across TWO heights (Fix B style)
+    lsys.addRule('L', "F[+A][-A][+A][-A]M", 1.0f);
+    lsys.addRule('M', "F[+A][-A]F[\\A][/A]N", 1.0f);         // 4 scaffolds, split across 2 nodes
+    lsys.addRule('N', "F[+A][-A]F[\\A][/A]O", 1.0f);         // same
+    lsys.addRule('O', "F[+A][-A]P", 1.0f);                   // lighter as we go up
+    lsys.addRule('P', "F[+A][-A]Q", 1.0f);
+    lsys.addRule('Q', "FX", 1.0f);
+
+    // --- X: LOWER trunk bud (denser scaffold zone) ---
+    // baseline: 2 scaffolds per node
+    lsys.addRule('X', "F[+A][-A]X", 1.30f);
+
+    // NEW: TWO NODES per rewrite -> more lower-trunk scaffolds without affecting the top
+    lsys.addRule('X', "F[+A][-A]F[+A][-A]X", 0.95f);
+
+    // occasional 3-scaffold node (still okay with maxBranchesPerNode=4)
+    lsys.addRule('X', "F[+A][-A][|A]X", 0.70f);
+
+    // a tiny bit of ï¿½plain trunkï¿½ so itï¿½s not perfectly periodic
+    lsys.addRule('X', "FX", 0.06f);
+    lsys.addRule('X', "FFX", 0.03f);
+
+    // IMPORTANT knob: keep X alive longer so the lower trunk stays branchy
+    lsys.addRule('X', "FT", 0.15f);   // was effectively switching too soon
+
+    // rare end
+    lsys.addRule('X', "", 0.005f);
+
+    // --- T: UPPER trunk bud (keep your current look here) ---
+    lsys.addRule('T', "F[+A][-A]T", 1.40f);
+    lsys.addRule('T', "F[+A][-A][&A][^A]T", 0.80f);
+    lsys.addRule('T', "FT", 0.10f);
+    lsys.addRule('T', "FFT", 0.05f);
+
+    // crown handoff (same idea as before, but from T instead of X)
+    lsys.addRule('T', "FC", 0.12f);
+    lsys.addRule('T', "F[+A][-A][&A][^A]C", 0.10f);
+
+    lsys.addRule('T', "", 0.005f);
+
+    // --- A: big branch bud (more lateral structure early, still controlled) ---
+    lsys.addRule('A', "FY", 0.50f);
+    lsys.addRule('A', "F[+Y]FY", 0.55f);
+    lsys.addRule('A', "F[-Y]FY", 0.55f);
+    lsys.addRule('A', "F[+Y][-Y]FY", 0.22f);
+
+    // --- Y: branch bud (make side-branches appear ALONG the length, not only at the tip) ---
+    lsys.addRule('Y', "FY", 1.05f);             // was 1.40f (too much ï¿½clean stickï¿½)
+
+    // NEW: side shoot while continuing (this is the key!)
+    lsys.addRule('Y', "F[+Y]FY", 0.28f);
+    lsys.addRule('Y', "F[-Y]FY", 0.28f);
+
+    // keep some normal branching
+    lsys.addRule('Y', "F[+Y]Y", 0.18f);
+    lsys.addRule('Y', "F[-Y]Y", 0.18f);
+    lsys.addRule('Y', "F[+Y][-Y]Y", 0.09f);
+
+    // subtle 3D spread (keep small to avoid clutter)
+    lsys.addRule('Y', "F[&Y][^Y]Y", 0.06f);
+    lsys.addRule('Y', "F[\\Y][/Y]Y", 0.06f);
+
+    // termination (keep your current values)
+    lsys.addRule('Y', "F", 0.10f);
+    lsys.addRule('Y', "", 0.06f);
+
+
+
+    // --- C: crown bud (adds ï¿½air gapsï¿½ via FC so itï¿½s less bunched-up) ---
+    lsys.addRule('C', "FC", 0.85f);  // spacing / structure without spawning new twigs every step
+    lsys.addRule('C', "F[+Y][-Y]C", 0.45f);
+    lsys.addRule('C', "F[\\Y][/Y]C", 0.25f);
+    lsys.addRule('C', "FY", 0.18f);
+    lsys.addRule('C', "", 0.03f);
+}
+
+static void SetupConiferGrammar(LSystem& lsys, const TreeParams& p)
+{
+    // De momento puede quedar bÃ¡sico/placeholder.
+    lsys.setSeed(p.seed);
+    // Placeholder for now:
+    lsys.setAxiom("F");
+    lsys.addRule('F', "FF", 1.0f);
+}
+
+
+
 std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
 {
     std::vector<VertexPN> verts;
@@ -153,92 +257,13 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
     };
 
 
-    // 1) L-system (deciduous-ish, stochastic, 3D tokens)
-    // Convention:
-    //   X = bud (rewrites, not drawn)
-    //   F = draw wood + advance
-    //   + - = yaw
-    //   & ^ = pitch
-    //   \ / = roll
+    //Instead of the whole decidious rule grammar we set the helper function
     LSystem lsys;
-    lsys.setSeed(p.seed);
-    lsys.setAxiom("L");
-
-    // Lower-trunk staging: denser scaffold for first ~6 segments, then handoff to X
-    // Also spreads 4 scaffolds across TWO heights (Fix B style)
-    lsys.addRule('L', "F[+A][-A][+A][-A]M", 1.0f);
-    lsys.addRule('M', "F[+A][-A]F[\\A][/A]N", 1.0f);         // 4 scaffolds, split across 2 nodes
-    lsys.addRule('N', "F[+A][-A]F[\\A][/A]O", 1.0f);         // same
-    lsys.addRule('O', "F[+A][-A]P", 1.0f);                   // lighter as we go up
-    lsys.addRule('P', "F[+A][-A]Q", 1.0f);
-    lsys.addRule('Q', "FX", 1.0f);
-
-    // --- X: LOWER trunk bud (denser scaffold zone) ---
-    // baseline: 2 scaffolds per node
-    lsys.addRule('X', "F[+A][-A]X", 1.30f);
-
-    // NEW: TWO NODES per rewrite -> more lower-trunk scaffolds without affecting the top
-    lsys.addRule('X', "F[+A][-A]F[+A][-A]X", 0.95f);
-
-    // occasional 3-scaffold node (still okay with maxBranchesPerNode=4)
-    lsys.addRule('X', "F[+A][-A][|A]X", 0.70f);
-
-    // a tiny bit of “plain trunk” so it’s not perfectly periodic
-    lsys.addRule('X', "FX", 0.06f);
-    lsys.addRule('X', "FFX", 0.03f);
-
-    // IMPORTANT knob: keep X alive longer so the lower trunk stays branchy
-    lsys.addRule('X', "FT", 0.15f);   // was effectively switching too soon
-
-    // rare end
-    lsys.addRule('X', "", 0.005f);
-
-    // --- T: UPPER trunk bud (keep your current look here) ---
-    lsys.addRule('T', "F[+A][-A]T", 1.40f);
-    lsys.addRule('T', "F[+A][-A][&A][^A]T", 0.80f);
-    lsys.addRule('T', "FT", 0.10f);
-    lsys.addRule('T', "FFT", 0.05f);
-
-    // crown handoff (same idea as before, but from T instead of X)
-    lsys.addRule('T', "FC", 0.12f);
-    lsys.addRule('T', "F[+A][-A][&A][^A]C", 0.10f);
-
-    lsys.addRule('T', "", 0.005f);
-
-    // --- A: big branch bud (more lateral structure early, still controlled) ---
-    lsys.addRule('A', "FY", 0.50f);
-    lsys.addRule('A', "F[+Y]FY", 0.55f);
-    lsys.addRule('A', "F[-Y]FY", 0.55f);
-    lsys.addRule('A', "F[+Y][-Y]FY", 0.22f);
-
-    // --- Y: branch bud (make side-branches appear ALONG the length, not only at the tip) ---
-    lsys.addRule('Y', "FY", 1.05f);             // was 1.40f (too much “clean stick”)
-
-    // NEW: side shoot while continuing (this is the key!)
-    lsys.addRule('Y', "F[+Y]FY", 0.28f);
-    lsys.addRule('Y', "F[-Y]FY", 0.28f);
-
-    // keep some normal branching
-    lsys.addRule('Y', "F[+Y]Y", 0.18f);
-    lsys.addRule('Y', "F[-Y]Y", 0.18f);
-    lsys.addRule('Y', "F[+Y][-Y]Y", 0.09f);
-
-    // subtle 3D spread (keep small to avoid clutter)
-    lsys.addRule('Y', "F[&Y][^Y]Y", 0.06f);
-    lsys.addRule('Y', "F[\\Y][/Y]Y", 0.06f);
-
-    // termination (keep your current values)
-    lsys.addRule('Y', "F", 0.10f);
-    lsys.addRule('Y', "", 0.06f);
-
-
-
-    // --- C: crown bud (adds “air gaps” via FC so it’s less bunched-up) ---
-    lsys.addRule('C', "FC", 0.85f);  // spacing / structure without spawning new twigs every step
-    lsys.addRule('C', "F[+Y][-Y]C", 0.45f);
-    lsys.addRule('C', "F[\\Y][/Y]C", 0.25f);
-    lsys.addRule('C', "FY", 0.18f);
-    lsys.addRule('C', "", 0.03f);
+    if (p.preset == TreePreset::Deciduous)
+        SetupDeciduousGrammar(lsys, p);
+    else
+        SetupConiferGrammar(lsys, p);
+    
 
     std::string sentence = lsys.generate(p.iterations);
 
@@ -476,7 +501,7 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
             if (!stack.empty() && cur.localDepth < p.minBranchSpacing)
                 skip = true;
 
-            // Per-node cap: don’t allow “spray” of many branches from the same spot
+            // Per-node cap: donï¿½t allow ï¿½sprayï¿½ of many branches from the same spot
             if (cur.branchesAtNode >= p.maxBranchesPerNode) skip = true;
 
             if (p.enableBranchSkipping && !stack.empty()) {
@@ -540,13 +565,13 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
                 float rollDeg = 0.0f;
 
                 if (parentIsTrunk) {
-                    // ---- TRUNK scaffolds: enforce even 360° distribution ----
+                    // ---- TRUNK scaffolds: enforce even 360ï¿½ distribution ----
                     // Try 12 or 16 bins. 12 is a good start.
                     const int   bins = 12;
                     const float binSize = 360.0f / float(bins);
 
                     // trunkBranchIndex must be a separate counter (uint32_t) you keep outside the loop
-                    // (If you don’t have it yet, add: std::uint32_t trunkBranchIndex = 0; near branchIndex)
+                    // (If you donï¿½t have it yet, add: std::uint32_t trunkBranchIndex = 0; near branchIndex)
                     int bin = int(trunkBranchIndex % bins);
 
                     // Optional: spread multiple branches spawned at the exact same trunk node
