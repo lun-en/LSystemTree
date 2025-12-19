@@ -118,7 +118,7 @@ int main() {
     params.maxLenToRadius = 14.0f;   // fine
 
     params.minBranchSpacing = 1;   // IMPORTANT: 2 will kill most of your grammar’s branches
-    params.maxBranchesPerNode = 4;   // start generous
+    params.maxBranchesPerNode = 5;   // start generous
 
     params.branchRadiusDecay = 0.78f;   // optional but helps preserve twig thickness
 

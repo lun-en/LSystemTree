@@ -165,10 +165,11 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
     lsys.setAxiom("L");
 
     // Lower-trunk staging: denser scaffold for first ~6 segments, then handoff to X
-    lsys.addRule('L', "F[+A][-A][\\A][/A]M", 1.0f);
-    lsys.addRule('M', "F[+A][-A][\\A][/A]N", 1.0f);
-    lsys.addRule('N', "F[+A][-A][\\A][/A]O", 1.0f);
-    lsys.addRule('O', "F[+A][-A]P", 1.0f);
+    // Also spreads 4 scaffolds across TWO heights (Fix B style)
+    lsys.addRule('L', "F[+A][-A][+A][-A]M", 1.0f);
+    lsys.addRule('M', "F[+A][-A]F[\\A][/A]N", 1.0f);         // 4 scaffolds, split across 2 nodes
+    lsys.addRule('N', "F[+A][-A]F[\\A][/A]O", 1.0f);         // same
+    lsys.addRule('O', "F[+A][-A]P", 1.0f);                   // lighter as we go up
     lsys.addRule('P', "F[+A][-A]Q", 1.0f);
     lsys.addRule('Q', "FX", 1.0f);
 
