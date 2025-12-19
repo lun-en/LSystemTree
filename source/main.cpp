@@ -90,20 +90,14 @@ int main() {
 
     // ---- Build tree geometry (CPU) ----
     TreeParams params;
-    params.iterations = 16;
     params.seed = 1337;
     params.addSpheres = true;
 
     params.branchAngleDeg = 22.0f;
-    params.angleJitterDeg = 10.0f;
-    params.lengthJitterFrac = 0.12f;
-    params.radiusJitterFrac = 0.10f;
 
     params.usePhyllotaxisRoll = true;
     params.phyllotaxisDeg = 137.5f;
-    //params.branchRollJitterDeg = 20.0f;
 
-    params.branchRollJitterDeg = 90.0f;   // was 20
     params.branchPitchMaxDeg = 55.0f;   // was 45 (or 35 earlier)
 
     params.baseRadius = 0.35f;
@@ -115,30 +109,40 @@ int main() {
     params.minRadiusForBranch = 0.040f;
     params.depthFullEffect = 10;
 
-    params.branchPitchMinDeg = 10.0f;
-    //params.branchPitchMaxDeg = 45.0f;
 
     params.enableTropism = true;
     params.tropismDir = glm::vec3(0, -1, 0);
     params.tropismStrength = 0.015f;
     params.tropismThinBoost = 0.08f;
 
-    params.branchLengthDecay = 0.55f;   // 0.85–0.92 range
-    params.twigLengthBoost = 0.30f;   // was 0.30, too strong when combined with prune
     params.maxLenToRadius = 14.0f;   // fine
 
     params.minBranchSpacing = 1;   // IMPORTANT: 2 will kill most of your grammar’s branches
     params.maxBranchesPerNode = 4;   // start generous
 
-    params.enableRadiusPruning = true; // IMPORTANT: get density back first
-    params.pruneRadius = 0.0006f;       // unused while pruning is off
-
-    params.minRadius = 0.0012f;         // draw cutoff (smaller = more visible twigs)
-    params.minLength = 0.005f;          // allow short twig segments
     params.branchRadiusDecay = 0.78f;   // optional but helps preserve twig thickness
 
-    //params.minRadius = 0.0004f;          // show thin twigs
-    //params.pruneRadius = 0.00015f;       // irrelevant while pruning is off
+
+
+    params.iterations = 15;          // start lower to avoid twig explosion; bump to 15 if too sparse
+    params.angleJitterDeg = 7.0f;    // less random-looking noise
+
+    params.lengthJitterFrac = 0.08f; // more consistent segment lengths
+    params.radiusJitterFrac = 0.06f; // less “sparkly” thickness noise
+
+    params.branchRollJitterDeg = 35.0f; // 90 makes distribution look chaotic; phyllotaxis already spreads 360°
+    params.branchPitchMinDeg = 15.0f;
+    params.branchPitchMaxDeg = 60.0f;   // better 3D crown without relying on huge roll jitter
+
+    params.branchLengthDecay = 0.72f;   // longer sub-branches than 0.55
+    params.twigLengthBoost = 0.15f;    // 0.30 shortens twigs a lot -> looks “fuzzy” and cramped
+
+    params.enableRadiusPruning = true;
+    params.pruneRadius = 0.0010f;       // prune more of the ultra-fine structural recursion (reduces clutter)
+
+    params.minRadius = 0.0016f;         // draw fewer micro-twigs
+    params.minLength = 0.010f;          // avoid tiny “hair” segments
+
 
     std::vector<VertexPN> verts = BuildTreeVertices(params);
     std::cout << "Tree vertices: " << verts.size() << "\n";

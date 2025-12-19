@@ -162,69 +162,82 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
     //   \ / = roll
     LSystem lsys;
     lsys.setSeed(p.seed);
-    lsys.setAxiom("X");
+    lsys.setAxiom("L");
 
-    /*
-    // X = trunk bud (rarely terminates)
-    lsys.addRule('X', "F[+A][-A]X", 1.20f);
-    lsys.addRule('X', "F[+A]X", 0.80f);
-    lsys.addRule('X', "F[-A]X", 0.80f);
-    //lsys.addRule('X', "FFX", 0.55f);
-    //lsys.addRule('X', "FX", 0.90f);   // keep growing trunk
-    lsys.addRule('X', "", 0.01f);   // VERY rare termination
+    // Lower-trunk staging: denser scaffold for first ~6 segments, then handoff to X
+    lsys.addRule('L', "F[+A][-A][\\A][/A]M", 1.0f);
+    lsys.addRule('M', "F[+A][-A][\\A][/A]N", 1.0f);
+    lsys.addRule('N', "F[+A][-A][\\A][/A]O", 1.0f);
+    lsys.addRule('O', "F[+A][-A]P", 1.0f);
+    lsys.addRule('P', "F[+A][-A]Q", 1.0f);
+    lsys.addRule('Q', "FX", 1.0f);
 
-    // reduce pure leader-shoot tendency
-    lsys.addRule('X', "FX", 0.35f);   // was 0.90
-    lsys.addRule('X', "FFX", 0.20f);   // was 0.55
+    // --- X: LOWER trunk bud (denser scaffold zone) ---
+    // baseline: 2 scaffolds per node
+    lsys.addRule('X', "F[+A][-A]X", 1.30f);
 
-    // NEW: canopy handoff (NO X at the end)
-    // this converts the trunk tip into a branching "crown" instead of a needle
-    lsys.addRule('X', "F[+A][-A][&A][^A]A", 0.55f);
-    */
+    // NEW: TWO NODES per rewrite -> more lower-trunk scaffolds without affecting the top
+    lsys.addRule('X', "F[+A][-A]F[+A][-A]X", 0.95f);
 
-    // X = trunk bud (builds trunk + major scaffolding branches)
-    // Keep some trunk extension, but make "branching while extending" dominate.
-    lsys.addRule('X', "F[+A][-A]X", 1.10f);
-    lsys.addRule('X', "F[+A][-A][&A][^A]X", 0.85f);
-    //lsys.addRule('X', "F[&Y][^Y]X", 0.33f);
-    //lsys.addRule('X', "F[\\Y][/Y]X", 0.33f);
-    lsys.addRule('X', "F[+Y][-Y][&Y][^Y]X", 0.33f); 
-    lsys.addRule('X', "F[\\Y][/Y][&Y][^Y]X", 0.33f);
-    lsys.addRule('X', "F[+Y][-Y]X", 0.33f);
+    // occasional 3-scaffold node (still okay with maxBranchesPerNode=4)
+    lsys.addRule('X', "F[+A][-A][|A]X", 0.70f);
 
-    // Rare “pure leader” (keep small or you get the needle)
-    lsys.addRule('X', "FX", 0.10f);
-    lsys.addRule('X', "FFX", 0.05f);
+    // a tiny bit of “plain trunk” so it’s not perfectly periodic
+    lsys.addRule('X', "FX", 0.06f);
+    lsys.addRule('X', "FFX", 0.03f);
 
-    // --- CANOPY HANDOFF ---
-    // Instead of continuing as X forever, convert into a crown bud C.
-    // This still grows upward, but its growth is *branch-driven*.
-    lsys.addRule('X', "FC", 0.55f);
-    lsys.addRule('X', "F[+A][-A][&A][^A]C", 0.70f);
+    // IMPORTANT knob: keep X alive longer so the lower trunk stays branchy
+    lsys.addRule('X', "FT", 0.15f);   // was effectively switching too soon
 
-    // A = newborn branch bud (guaranteed to produce at least 1 segment)
-    lsys.addRule('A', "FY", 1.0f);
-    lsys.addRule('A', "F[+Y]Y", 0.10f);  // was 0.40
-    lsys.addRule('A', "F[-Y]Y", 0.10f);  // was 0.40
+    // rare end
+    lsys.addRule('X', "", 0.005f);
 
-    // Y = branch bud (make sub-branching MUCH more common, and reduce early “stub” deaths)
-    lsys.addRule('Y', "FY", 1.00f);  // was 1.80 (too “stick-y”)
-    lsys.addRule('Y', "F[+Y]Y", 0.70f);  // was 0.40
-    lsys.addRule('Y', "F[-Y]Y", 0.70f);  // was 0.40
-    lsys.addRule('Y', "F[+Y][-Y]Y", 0.70f);  // was 0.18  (this makes the “real twig” look happen often)
-    lsys.addRule('Y', "FFY", 0.25f);  // keep some longer runs
+    // --- T: UPPER trunk bud (keep your current look here) ---
+    lsys.addRule('T', "F[+A][-A]T", 1.40f);
+    lsys.addRule('T', "F[+A][-A][&A][^A]T", 0.80f);
+    lsys.addRule('T', "FT", 0.10f);
+    lsys.addRule('T', "FFT", 0.05f);
 
-    lsys.addRule('Y', "F[&Y][^Y]Y", 0.15f);
-    lsys.addRule('Y', "F[\\Y][/Y]Y", 0.15f);   // adds 3D spread in the crown
+    // crown handoff (same idea as before, but from T instead of X)
+    lsys.addRule('T', "FC", 0.12f);
+    lsys.addRule('T', "F[+A][-A][&A][^A]C", 0.10f);
 
-    // C = crown bud (keeps growing, but "puffs" into a canopy instead of a needle)
-    // Note: includes roll tokens so the crown fills 360 degrees over time.
-    lsys.addRule('C', "F[+Y][-Y][&Y][^Y]C", 0.90f);
-    lsys.addRule('C', "F[\\Y][/Y][&Y][^Y]C", 0.30f);
-    lsys.addRule('C', "F[+Y][-Y]C", 0.55f);
-    lsys.addRule('C', "F[\\Y][/Y]C", 0.35f);   // adds 3D spread in the crown
-    lsys.addRule('C', "FY", 0.20f);   // sometimes just feed into Y
+    lsys.addRule('T', "", 0.005f);
 
+    // --- A: big branch bud (more lateral structure early, still controlled) ---
+    lsys.addRule('A', "FY", 0.50f);
+    lsys.addRule('A', "F[+Y]FY", 0.55f);
+    lsys.addRule('A', "F[-Y]FY", 0.55f);
+    lsys.addRule('A', "F[+Y][-Y]FY", 0.22f);
+
+    // --- Y: branch bud (make side-branches appear ALONG the length, not only at the tip) ---
+    lsys.addRule('Y', "FY", 1.05f);             // was 1.40f (too much “clean stick”)
+
+    // NEW: side shoot while continuing (this is the key!)
+    lsys.addRule('Y', "F[+Y]FY", 0.28f);
+    lsys.addRule('Y', "F[-Y]FY", 0.28f);
+
+    // keep some normal branching
+    lsys.addRule('Y', "F[+Y]Y", 0.18f);
+    lsys.addRule('Y', "F[-Y]Y", 0.18f);
+    lsys.addRule('Y', "F[+Y][-Y]Y", 0.09f);
+
+    // subtle 3D spread (keep small to avoid clutter)
+    lsys.addRule('Y', "F[&Y][^Y]Y", 0.06f);
+    lsys.addRule('Y', "F[\\Y][/Y]Y", 0.06f);
+
+    // termination (keep your current values)
+    lsys.addRule('Y', "F", 0.10f);
+    lsys.addRule('Y', "", 0.06f);
+
+
+
+    // --- C: crown bud (adds “air gaps” via FC so it’s less bunched-up) ---
+    lsys.addRule('C', "FC", 0.85f);  // spacing / structure without spawning new twigs every step
+    lsys.addRule('C', "F[+Y][-Y]C", 0.45f);
+    lsys.addRule('C', "F[\\Y][/Y]C", 0.25f);
+    lsys.addRule('C', "FY", 0.18f);
+    lsys.addRule('C', "", 0.03f);
 
     std::string sentence = lsys.generate(p.iterations);
 
@@ -235,15 +248,17 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
         << " sentenceLen=" << sentence.size()
         << "\n";
 
-    size_t countF = 0, countX = 0, countY = 0, countBrack = 0;
+    size_t countF = 0, countX = 0, countY = 0, countC = 0, countT = 0, countBrack = 0;
     for (char c : sentence) {
         if (c == 'F') ++countF;
         else if (c == 'X') ++countX;
         else if (c == 'Y') ++countY;
+        else if (c == 'C') ++countC;
+        else if (c == 'T') ++countT;
         else if (c == '[') ++countBrack;
     }
     std::cout << "F=" << countF << " X=" << countX << " Y=" << countY
-        << " [=" << countBrack << "\n";
+        << " C=" << countC << " T=" << countT << " [=" << countBrack << "\n";
 
     // 2) Turtle init
     TurtleState cur;
@@ -258,6 +273,7 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
     stack.reserve(2048);
 
     std::uint32_t branchIndex = 0;
+    std::uint32_t trunkBranchIndex = 0;
 
     std::cout << "[TreeGen] BUILD MARKER: 2025-12-17 A\n";
 
@@ -336,6 +352,9 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
     };
 
     size_t skippedBranches = 0;
+    size_t trunkBranchStarts = 0;
+    size_t nonTrunkBranchStarts = 0;
+
 
     // 3) Interpret
     for (size_t i = 0; i < sentence.size(); ++i) {
@@ -398,12 +417,17 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
         }
 
         case 'X':
-            // bud symbol: does not draw, just exists for rewriting
+        case 'Y':
+        case 'T':
+        case 'C':
+        case 'L':
+        case 'M':
+        case 'N':
+        case 'O':
+        case 'P':
+        case 'Q':
             break;
 
-        case 'Y':
-            // bud symbol: does not draw, just exists for rewriting
-            break;
 
             // Yaw around local Z (matches your existing convention)
         case '+': {
@@ -480,6 +504,15 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
                 break;
             }
 
+            if (stack.empty()) trunkBranchStarts++;
+            else               nonTrunkBranchStarts++;
+
+            const bool parentIsTrunk = stack.empty();
+
+            // parent bookkeeping first
+            cur.branchesAtNode += 1;
+            const int parentBranchOrdinal = cur.branchesAtNode; // 1..N at this same node
+
             // normal branch handling:
             cur.branchesAtNode += 1;     // parent bookkeeping first
             stack.push_back(cur);        // store parent WITH updated bookkeeping
@@ -494,10 +527,46 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
             cur.length *= p.branchLengthDecay;   // IMPORTANT: use branchLengthDecay, not lengthDecayF
 
             // distribute branch planes around trunk  (MOVE THIS UP)
-            if (p.usePhyllotaxisRoll) {
+            /*if (p.usePhyllotaxisRoll) {
                 float roll = p.phyllotaxisDeg * float(branchIndex++);
                 roll += randRange(-p.branchRollJitterDeg, +p.branchRollJitterDeg);
                 rotateLocal(glm::radians(roll), glm::vec3(0, 1, 0)); // roll around heading
+            }*/
+
+            // distribute branch planes around trunk
+            if (p.usePhyllotaxisRoll) {
+
+                float rollDeg = 0.0f;
+
+                if (parentIsTrunk) {
+                    // ---- TRUNK scaffolds: enforce even 360° distribution ----
+                    // Try 12 or 16 bins. 12 is a good start.
+                    const int   bins = 12;
+                    const float binSize = 360.0f / float(bins);
+
+                    // trunkBranchIndex must be a separate counter (uint32_t) you keep outside the loop
+                    // (If you don’t have it yet, add: std::uint32_t trunkBranchIndex = 0; near branchIndex)
+                    int bin = int(trunkBranchIndex % bins);
+
+                    // Optional: spread multiple branches spawned at the exact same trunk node
+                    // by offsetting within the bins a bit
+                    float intra = (parentBranchOrdinal - 1) * (binSize * 0.25f); // mild
+
+                    rollDeg = bin * binSize + intra;
+
+                    // Small jitter only (big jitter = clumps)
+                    rollDeg += randRange(-8.0f, +8.0f);
+
+                    trunkBranchIndex++;
+
+                }
+                else {
+                    // ---- non-trunk branches: keep your phyllotaxis/jitter behavior ----
+                    rollDeg = p.phyllotaxisDeg * float(branchIndex++);
+                    rollDeg += randRange(-p.branchRollJitterDeg, +p.branchRollJitterDeg);
+                }
+
+                rotateLocal(glm::radians(rollDeg), glm::vec3(0, 1, 0));
             }
 
             // NEW: pitch kick so branches spread in true 3D  (MOVE THIS DOWN)
@@ -519,6 +588,9 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
             break;
         }
     }
+
+    std::cout << "trunkBranchStarts=" << trunkBranchStarts
+        << " nonTrunkBranchStarts=" << nonTrunkBranchStarts << "\n";
 
     std::cout << "skippedBranches=" << skippedBranches << "\n";
 
