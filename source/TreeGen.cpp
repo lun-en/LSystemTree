@@ -18,6 +18,16 @@ struct TurtleState {
     int   depth;        // global-ish segment count along current path
     int   localDepth;   // NEW: segments since the last '[' (branch start)
     int branchesAtNode;   // NEW
+    
+    // Crookedness state (bounded “wiggle” angles)
+    float crookYaw = 0.0f;
+    float crookPitch = 0.0f;
+    float crookRoll = 0.0f;
+
+    float crookYawPrev = 0.0f;
+    float crookPitchPrev = 0.0f;
+    float crookRollPrev = 0.0f;
+
 };
 
 static void appendFrustumSegment(std::vector<VertexPN>& out,
@@ -175,7 +185,7 @@ static void SetupDeciduousGrammar(LSystem& lsys, const TreeParams& p)
     lsys.addRule('T', "FC", 0.12f);
     lsys.addRule('T', "F[+A][-A][&A][^A]C", 0.10f);
 
-    lsys.addRule('T', "", 0.005f);
+    //lsys.addRule('T', "", 0.005f);
 
     // --- A: big branch bud (more lateral structure early, still controlled) ---
     lsys.addRule('A', "FA", 0.50f);
@@ -205,7 +215,7 @@ static void SetupDeciduousGrammar(LSystem& lsys, const TreeParams& p)
     lsys.addRule('C', "F[+Y][-Y]C", 0.45f);
     lsys.addRule('C', "F[\\Y][/Y]C", 0.25f);
     lsys.addRule('C', "FY", 0.18f);
-    lsys.addRule('C', "", 0.03f);
+    //lsys.addRule('C', "", 0.03f);
 }
 
 static void SetupConiferGrammar(LSystem& lsys, const TreeParams& p)
@@ -291,6 +301,10 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
     cur.localDepth = 0;
     cur.branchesAtNode = 0;
 
+    // crookedness
+    cur.crookYaw = cur.crookPitch = cur.crookRoll = 0.0f;
+    cur.crookYawPrev = cur.crookPitchPrev = cur.crookRollPrev = 0.0f;
+
     std::vector<TurtleState> stack;
     stack.reserve(2048);
 
@@ -318,8 +332,7 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
         cur.transform = T * R * Ti * cur.transform;
     };
 
-
-    // Helper: optional tropism (kept OFF by default)
+    // Helper: tropism
     auto applyTropism = [&]() {
         if (!p.enableTropism) return;
 
@@ -334,15 +347,58 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
         axis /= axisLen;
 
         float thin01 = 1.0f - glm::clamp(cur.radius / std::max(1e-6f, p.baseRadius), 0.0f, 1.0f);
-        // thin01=0 near trunk, thin01->1 for thin branches
         float angle = p.tropismStrength * (1.0f + p.tropismThinBoost * thin01);
 
-        // rotate around the turtle's current position (so translation doesn't orbit around origin)
         glm::vec3 pos = glm::vec3(cur.transform[3]);
         glm::mat4 T = glm::translate(glm::mat4(1.0f), pos);
         glm::mat4 Ti = glm::translate(glm::mat4(1.0f), -pos);
         glm::mat4 R = glm::rotate(glm::mat4(1.0f), angle, axis);
         cur.transform = T * R * Ti * cur.transform;
+    };
+
+    // Helper: crookedness (bounded, mean-reverting “wiggle” -> oak-like zig-zag)
+// Uses existing params:
+//   p.crookStrength  : overall intensity multiplier
+//   p.crookAccelDeg  : noise amplitude per segment (degrees)
+//   p.crookDamping   : 0..1, higher = smoother / slower changes (try 0.85~0.95)
+    auto applyCrookedness = [&]() {
+        if (!p.enableCrookedness) return;
+
+        // How much should thick vs thin branches be affected?
+        // thick01=1 near trunk, ->0 on tiny twigs
+        float thick01 = glm::clamp(cur.radius / std::max(1e-6f, p.baseRadius), 0.0f, 1.0f);
+
+        // Reduce effect on tiny twigs so you don't get “hair noise”
+        float twigScale = glm::mix(0.25f, 1.0f, thick01);
+
+        // Final strength for this segment
+        float strength = p.crookStrength * twigScale;
+
+        // Random target noise each step (degrees -> radians)
+        // (Roll is weaker; too much roll looks chaotic.)
+        float nYaw = glm::radians(randRange(-p.crookAccelDeg, +p.crookAccelDeg));
+        float nPitch = glm::radians(randRange(-p.crookAccelDeg, +p.crookAccelDeg));
+        float nRoll = glm::radians(randRange(-p.crookAccelDeg, +p.crookAccelDeg)) * 0.35f;
+
+        // Mean-reverting “wiggle” angles (bounded, no long-term drift)
+        // crookDamping near 1 -> smooth/slow; lower -> sharper zig-zag
+        cur.crookYaw = cur.crookYaw * p.crookDamping + nYaw;
+        cur.crookPitch = cur.crookPitch * p.crookDamping + nPitch;
+        cur.crookRoll = cur.crookRoll * p.crookDamping + nRoll;
+
+        // Apply ONLY the incremental change this step (prevents accumulation/drift)
+        float dYaw = cur.crookYaw - cur.crookYawPrev;
+        float dPitch = cur.crookPitch - cur.crookPitchPrev;
+        float dRoll = cur.crookRoll - cur.crookRollPrev;
+
+        cur.crookYawPrev = cur.crookYaw;
+        cur.crookPitchPrev = cur.crookPitch;
+        cur.crookRollPrev = cur.crookRoll;
+
+        // Apply around LOCAL axes (your rotateLocal already rotates about the turtle position)
+        rotateLocal(-dYaw * strength, glm::vec3(0, 0, 1)); // yaw
+        rotateLocal(-dPitch * strength, glm::vec3(1, 0, 0)); // pitch
+        rotateLocal(-dRoll * strength, glm::vec3(0, 1, 0)); // roll (around heading)
     };
 
     // Skip forward until the ']' that closes the *current* branch (one pop).
@@ -386,7 +442,35 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
             // jittered segment
             float len = cur.length * jitterFrac(p.lengthJitterFrac);
             float rBottom = cur.radius * jitterFrac(p.radiusJitterFrac);
-            float rTop = (cur.radius * p.radiusDecayF) * jitterFrac(p.radiusJitterFrac);
+            // --- per-segment radius decay (curved for trunk, linear for branches) ---
+            float radiusDecayThisStep = p.radiusDecayF;
+
+            // "Main trunk" is when we are NOT inside any '[' ... ']'
+            bool isTrunk = stack.empty();
+
+            if (isTrunk && p.enableTrunkTaperCurve) {
+                float baseR = std::max(1e-6f, p.baseRadius);
+
+                // 1 near base, -> 0 as it gets thinner
+                float thick01 = glm::clamp(cur.radius / baseR, 0.0f, 1.0f);
+
+                // 0 at base -> 1 near the top
+                float progress = 1.0f - thick01;
+
+                // Curve: >1 means "slow early, faster late"
+                float s = std::pow(progress, std::max(0.01f, p.trunkTaperPower));
+
+                // Decay near base: closer to 1.0 (slower taper)
+                float decayNearBase = glm::mix(1.0f, p.radiusDecayF, 0.25f);
+
+                // Decay near top: slightly faster than linear (a bit smaller)
+                float decayNearTop = p.radiusDecayF * glm::clamp(p.trunkTaperTopMult, 0.0f, 1.0f);
+
+                radiusDecayThisStep = glm::mix(decayNearBase, decayNearTop, s);
+            }
+
+            // Apply decay + jitter
+            float rTop = (cur.radius * radiusDecayThisStep) * jitterFrac(p.radiusJitterFrac);
 
             float t = depthT(cur.depth);
 
@@ -432,10 +516,10 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
             cur.localDepth += 1;
             cur.branchesAtNode = 0;
 
-            // optional curvature
+            // optional curvature (affects the NEXT segment direction)
+            applyCrookedness();
             applyTropism();
             break;
-
         }
 
         case 'X':
@@ -547,6 +631,10 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
             // branch thickness/length reduction when entering a branch
             cur.radius *= p.branchRadiusDecay;
             cur.length *= p.branchLengthDecay;   // IMPORTANT: use branchLengthDecay, not lengthDecayF
+
+            // crookedness should start “fresh” per branch (prevents inheriting a strong kink)
+            cur.crookYaw = cur.crookPitch = cur.crookRoll = 0.0f;
+            cur.crookYawPrev = cur.crookPitchPrev = cur.crookRollPrev = 0.0f;
 
             // distribute branch planes around trunk  (MOVE THIS UP)
             /*if (p.usePhyllotaxisRoll) {

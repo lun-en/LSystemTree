@@ -116,6 +116,8 @@ int main(int argc, char** argv) {
         }
     }
 
+    params.iterations = 15;          // start lower to avoid twig explosion; bump to 15 if too sparse
+
     params.seed = 1337;
     params.addSpheres = true;
 
@@ -124,7 +126,7 @@ int main(int argc, char** argv) {
     params.usePhyllotaxisRoll = true;
     params.phyllotaxisDeg = 137.5f;
 
-    params.branchPitchMaxDeg = 55.0f;   // was 45 (or 35 earlier)
+    params.branchPitchMaxDeg = 60.0f;   // was 45 (or 35 earlier)
 
     params.baseRadius = 0.55f;
     params.baseLength = 1.6f;
@@ -139,18 +141,17 @@ int main(int argc, char** argv) {
     params.enableTropism = true;
     params.tropismDir = glm::vec3(0, 1, 0);
     params.tropismStrength = 0.015f;
-    params.tropismThinBoost = 0.08f;
+    params.tropismThinBoost = 0.18f;
 
     params.maxLenToRadius = 14.0f;   // fine
 
     params.minBranchSpacing = 1;   // IMPORTANT: 2 will kill most of your grammar's branches
-    params.maxBranchesPerNode = 5;   // start generous
+    params.maxBranchesPerNode = 128;   // start generous
 
-    params.branchRadiusDecay = 0.80f;   // optional but helps preserve twig thickness
+    params.branchRadiusDecay = 0.75f;   // optional but helps preserve twig thickness
+    params.branchLengthDecay = 0.85f;   // longer sub-branches than 0.55
+    params.twigLengthBoost = 0.15f;    // 0.30 shortens twigs a lot -> looks �fuzzy� and cramped
 
-
-
-    params.iterations = 15;          // start lower to avoid twig explosion; bump to 15 if too sparse
     params.angleJitterDeg = 7.0f;    // less random-looking noise
 
     params.lengthJitterFrac = 0.08f; // more consistent segment lengths
@@ -160,15 +161,28 @@ int main(int argc, char** argv) {
     params.branchPitchMinDeg = 15.0f;
     params.branchPitchMaxDeg = 50.0f;   // better 3D crown without relying on huge roll jitter
 
-    params.branchLengthDecay = 0.85f;   // longer sub-branches than 0.55
-    params.twigLengthBoost = 0.15f;    // 0.30 shortens twigs a lot -> looks �fuzzy� and cramped
-
-    params.enableRadiusPruning = false;
+    params.enableRadiusPruning = true;
     params.pruneRadius = 0.0010f;       // prune more of the ultra-fine structural recursion (reduces clutter)
 
     params.minRadius = 0.0016f;         // draw fewer micro-twigs
     params.minLength = 0.010f;          // avoid tiny �hair� segments
 
+    params.enableCrookedness = true;
+
+    // stronger than 1, but not insane
+    params.crookStrength = 1.4f;
+
+    // bigger noise = more zig-zag
+    params.crookAccelDeg = 18.0f;
+
+    // smoothing: 0.85–0.95 is the useful range
+    params.crookDamping = 0.82f;
+
+    params.enableTrunkTaperCurve = false;
+
+    params.trunkTaperPower = 2.2f;
+
+    params.trunkTaperTopMult = 0.95f;
 
     std::vector<VertexPN> verts = BuildTreeVertices(params);
     std::cout << "Tree vertices: " << verts.size() << "\n";

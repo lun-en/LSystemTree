@@ -92,6 +92,26 @@ struct TreeParams {
     bool  enableRadiusPruning = false;  // start OFF to get twigs back
     float pruneRadius = 0.0006f;        // much smaller than minRadius
 
+    // Crookedness
+    bool  enableCrookedness = false;
+    float crookStrength = 5.0f;   // overall intensity
+    float crookAccelDeg = 5.6f;   // random accel per segment (degrees)
+    float crookDamping = 0.01f;  // 0.85–0.95 (higher = smoother)
+
+    //float crookStrength = 10.0f;   // overall intensity
+    //float crookAccelDeg = 0.6f;   // random accel per segment (degrees)
+    //float crookDamping = 0.90f;  // 0.85–0.95 (higher = smoother)
+
+    // Trunk taper curve (only affects the main trunk: stack.empty() path)
+    bool  enableTrunkTaperCurve = true;
+
+    // 1.0 = roughly linear, >1 = slower early, faster late (recommended 2.0–3.0)
+    float trunkTaperPower = 2.2f;
+
+    // Multiplies the decay near the top to make it slightly faster than linear.
+    // 1.0 = no extra speed-up, 0.90–0.98 = subtle speed-up
+    float trunkTaperTopMult = 0.95f;
+
 
 };
 
