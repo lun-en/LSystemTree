@@ -158,6 +158,7 @@ static void SetupDeciduousGrammar(LSystem& lsys, const TreeParams& p)
     // --- X: LOWER trunk bud (denser scaffold zone) ---
     // baseline: 2 scaffolds per node
     lsys.addRule('X', "F[+A][-A]X", 1.30f);
+    //lsys.addRule('X', "F[\\X][/X]", 0.55f);
 
     // NEW: TWO NODES per rewrite -> more lower-trunk scaffolds without affecting the top
     lsys.addRule('X', "F[+A][-A]F[+A][-A]X", 0.95f);

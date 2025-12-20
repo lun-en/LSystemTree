@@ -170,13 +170,13 @@ int main(int argc, char** argv) {
     params.enableCrookedness = true;
 
     // stronger than 1, but not insane
-    params.crookStrength = 1.4f;
+    params.crookStrength = 2.4f;
 
     // bigger noise = more zig-zag
     params.crookAccelDeg = 18.0f;
 
     // smoothing: 0.85–0.95 is the useful range
-    params.crookDamping = 0.82f;
+    params.crookDamping = 0.10f;
 
     params.enableTrunkTaperCurve = false;
 
