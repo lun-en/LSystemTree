@@ -133,15 +133,16 @@ static void SetupDeciduousGrammar(LSystem& lsys, const TreeParams& p)
     //   & ^ = pitch
     //   \ / = roll
     lsys.setSeed(p.seed);
-    lsys.setAxiom("L");
+    lsys.setAxiom("K");
 
     // Lower-trunk staging: denser scaffold for first ~6 segments, then handoff to X
     // Also spreads 4 scaffolds across TWO heights (Fix B style)
-    lsys.addRule('L', "F[+A][-A][+A][-A]M", 1.0f);
-    lsys.addRule('M', "F[+A][-A]F[\\A][/A]N", 1.0f);         // 4 scaffolds, split across 2 nodes
-    lsys.addRule('N', "F[+A][-A]F[\\A][/A]O", 1.0f);         // same
-    lsys.addRule('O', "F[+A][-A]P", 1.0f);                   // lighter as we go up
-    lsys.addRule('P', "F[+A][-A]Q", 1.0f);
+    lsys.addRule('K', "FL", 1.0f);
+    lsys.addRule('L', "F[-A][-A]F[-A][-A]F[-A][-A]F[-A][-A]M", 1.0f);
+    lsys.addRule('M', "[-A]F[+A][-A]F[+A][-A]F[+A][-A]F[+A]N", 1.0f);         // 4 scaffolds, split across 2 nodes
+    lsys.addRule('N', "F[+A][-A]F[+A][-A]O", 1.0f);         // same
+    lsys.addRule('O', "[-A]F[+A][-A]F[+A]P", 1.0f);                   // lighter as we go up
+    lsys.addRule('P', "F[-A][-A]Q", 1.0f);
     lsys.addRule('Q', "FX", 1.0f);
 
     // --- X: LOWER trunk bud (denser scaffold zone) ---
@@ -162,7 +163,7 @@ static void SetupDeciduousGrammar(LSystem& lsys, const TreeParams& p)
     lsys.addRule('X', "FT", 0.15f);   // was effectively switching too soon
 
     // rare end
-    lsys.addRule('X', "", 0.005f);
+    //lsys.addRule('X', "", 0.005f);
 
     // --- T: UPPER trunk bud (keep your current look here) ---
     lsys.addRule('T', "F[+A][-A]T", 1.40f);
@@ -177,32 +178,27 @@ static void SetupDeciduousGrammar(LSystem& lsys, const TreeParams& p)
     lsys.addRule('T', "", 0.005f);
 
     // --- A: big branch bud (more lateral structure early, still controlled) ---
-    lsys.addRule('A', "FY", 0.50f);
-    lsys.addRule('A', "F[+Y]FY", 0.55f);
-    lsys.addRule('A', "F[-Y]FY", 0.55f);
-    lsys.addRule('A', "F[+Y][-Y]FY", 0.22f);
+    lsys.addRule('A', "FA", 0.50f);
+    lsys.addRule('A', "F[+Y]FA", 0.55f);
+    lsys.addRule('A', "F[-Y]FA", 0.55f);
+    lsys.addRule('A', "F[+Y][-Y]FA", 0.22f);
+    lsys.addRule('A', "FY", 0.18f);
 
-    // --- Y: branch bud (make side-branches appear ALONG the length, not only at the tip) ---
-    lsys.addRule('Y', "FY", 1.05f);             // was 1.40f (too much �clean stick�)
+    // ---- PRIMARY BRANCH (scaffold) ----
+    // Mostly extends, sometimes emits secondary twigs.
+    lsys.addRule('Y', "FY",                1.00f);  // extend 
+    lsys.addRule('Y', "FFY",               0.50f);  // occasional longer run 0.35
+    lsys.addRule('Y', "F[+b][-b]Y", 1.20f);  // twig 0.28
+    lsys.addRule('Y', "F[+b]Y", 0.60f);  // twig
+    lsys.addRule('Y', "F[-b]Y", 0.60f);  // small tuft 0.18
+    lsys.addRule('Y', "FY", 0.30f);  // stop extending0.25
+    lsys.addRule('Y', "F", 0.50f);  // die off (rare)0.10
 
-    // NEW: side shoot while continuing (this is the key!)
-    lsys.addRule('Y', "F[+Y]FY", 0.28f);
-    lsys.addRule('Y', "F[-Y]FY", 0.28f);
-
-    // keep some normal branching
-    lsys.addRule('Y', "F[+Y]Y", 0.18f);
-    lsys.addRule('Y', "F[-Y]Y", 0.18f);
-    lsys.addRule('Y', "F[+Y][-Y]Y", 0.09f);
-
-    // subtle 3D spread (keep small to avoid clutter)
-    lsys.addRule('Y', "F[&Y][^Y]Y", 0.06f);
-    lsys.addRule('Y', "F[\\Y][/Y]Y", 0.06f);
-
-    // termination (keep your current values)
-    lsys.addRule('Y', "F", 0.10f);
-    lsys.addRule('Y', "", 0.06f);
-
-
+    // ---- SECONDARY TWIGS ----
+    lsys.addRule('b', "F[+b][-b]Y", 1.00f);
+    lsys.addRule('b', "F[+b]b", 0.50f);
+    lsys.addRule('b', "F[-b]Y", 0.50f);
+    lsys.addRule('b', "F", 0.80f);
 
     // --- C: crown bud (adds �air gaps� via FC so it�s less bunched-up) ---
     lsys.addRule('C', "FC", 0.85f);  // spacing / structure without spawning new twigs every step

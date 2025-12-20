@@ -126,7 +126,7 @@ int main(int argc, char** argv) {
 
     params.branchPitchMaxDeg = 55.0f;   // was 45 (or 35 earlier)
 
-    params.baseRadius = 0.35f;
+    params.baseRadius = 0.55f;
     params.baseLength = 1.6f;
 
     params.enableBranchSkipping = false;
@@ -137,7 +137,7 @@ int main(int argc, char** argv) {
 
 
     params.enableTropism = true;
-    params.tropismDir = glm::vec3(0, -1, 0);
+    params.tropismDir = glm::vec3(0, 1, 0);
     params.tropismStrength = 0.015f;
     params.tropismThinBoost = 0.08f;
 
@@ -146,7 +146,7 @@ int main(int argc, char** argv) {
     params.minBranchSpacing = 1;   // IMPORTANT: 2 will kill most of your grammar's branches
     params.maxBranchesPerNode = 5;   // start generous
 
-    params.branchRadiusDecay = 0.78f;   // optional but helps preserve twig thickness
+    params.branchRadiusDecay = 0.80f;   // optional but helps preserve twig thickness
 
 
 
@@ -158,12 +158,12 @@ int main(int argc, char** argv) {
 
     params.branchRollJitterDeg = 35.0f; // 90 makes distribution look chaotic; phyllotaxis already spreads 360�
     params.branchPitchMinDeg = 15.0f;
-    params.branchPitchMaxDeg = 60.0f;   // better 3D crown without relying on huge roll jitter
+    params.branchPitchMaxDeg = 50.0f;   // better 3D crown without relying on huge roll jitter
 
-    params.branchLengthDecay = 0.72f;   // longer sub-branches than 0.55
+    params.branchLengthDecay = 0.85f;   // longer sub-branches than 0.55
     params.twigLengthBoost = 0.15f;    // 0.30 shortens twigs a lot -> looks �fuzzy� and cramped
 
-    params.enableRadiusPruning = true;
+    params.enableRadiusPruning = false;
     params.pruneRadius = 0.0010f;       // prune more of the ultra-fine structural recursion (reduces clutter)
 
     params.minRadius = 0.0016f;         // draw fewer micro-twigs
