@@ -184,6 +184,92 @@ int main(int argc, char** argv) {
 
     params.trunkTaperTopMult = 0.95f;
 
+
+    // ---- Preset-specific overrides for the CONIFER tree ----
+if (params.preset == TreePreset::Conifer) {
+    // Geometry: avoid spheres (too many polys + hides junction issues)
+    params.addSpheres = true;
+
+    // Conifers explode fast — start lower than deciduous
+    params.iterations = 13;
+
+    // Trunk / taper
+    params.baseRadius = 0.38f;
+    params.baseLength   = 1.35f;     // slightly shorter segments = more "nodes"
+    params.radiusDecayF = 0.95f;     // taper
+    params.lengthDecayF = 0.97f;    // slows length shrink => less "bunched"
+
+    // Branch scaling when entering '['
+    params.branchRadiusDecay = 0.20f;  // how fast branches get thinner ok
+    params.branchLengthDecay = 0.60f;  // branches start shorter than trunk ok
+
+    // Angle controls (used by + - & ^ \ /)
+    params.branchAngleDeg = 80.0f;   // tighter, more pine-like 22.0 at angle 90 to the trunk
+    params.angleJitterDeg = 10.0f;    // less chaotic than deciduous
+
+    params.lengthJitterFrac = 0.00f; // more consistent segment lengths
+    params.radiusJitterFrac = 0.00f; // less �sparkly� thickness noise
+
+    // Use phyllotaxis to distribute branches around trunk
+    params.usePhyllotaxisRoll = true;
+    params.phyllotaxisDeg = 1.5f;
+    params.branchRollJitterDeg = 12.0f; //bit more than 6 so won't look planar
+
+    // IMPORTANT: your interpreter applies a random pitch kick at '['.
+    // For conifers, we pitch explicitly using '&' in the grammar, so disable the random kick:
+    params.branchPitchMinDeg = 0.0f;
+    params.branchPitchMaxDeg = 0.0f;
+
+    // Reduce branch crowding
+    params.maxBranchesPerNode = 128;
+    params.minBranchSpacing = 1;
+
+    //Branch skipping 
+    params.enableBranchSkipping = false;
+    params.branchSkipMaxProb = 0.25f; // keep it mild for now
+    params.branchSkipStartDepth = 3;
+    params.minRadiusForBranch = 0.040f;
+    params.depthFullEffect = 10;
+
+    // Optional: mild gravity bend helps drooping tips
+    params.enableTropism = true;
+    params.tropismDir = glm::vec3(0, 1, 0);
+    params.tropismStrength = 0.010f; //0.010f
+    params.tropismThinBoost = 0.16f;
+
+    // Keep twigs from becoming hair
+    params.twigLengthBoost = 0.6f;
+    params.maxLenToRadius = 16.0f; 
+
+    params.enableTrunkTaperCurve = false;
+    params.trunkTaperPower = 2.2f;
+    params.trunkTaperTopMult = 0.95f;
+
+    //pruning / visibility
+    params.enableRadiusPruning = true;
+    params.pruneRadius = 0.0018f;
+
+    params.minRadius = 0.0010f;
+    params.minLength = 0.010f;
+
+    //Enable croockness
+    params.enableCrookedness = false;
+
+    // stronger than 1, but not insane
+    params.crookStrength = 2.4f;
+
+    // bigger noise = more zig-zag
+    params.crookAccelDeg = 18.0f;
+
+    // smoothing: 0.85–0.95 is the useful range
+    params.crookDamping = 0.10f;
+
+    // Slightly lower mesh resolution for performance (optional)
+    params.radialSegments = 8;
+}
+
+
+
     std::vector<VertexPN> verts = BuildTreeVertices(params);
     std::cout << "Tree vertices: " << verts.size() << "\n";
 

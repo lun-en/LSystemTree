@@ -221,11 +221,56 @@ static void SetupDeciduousGrammar(LSystem& lsys, const TreeParams& p)
 
 static void SetupConiferGrammar(LSystem& lsys, const TreeParams& p)
 {
-    // De momento puede quedar básico/placeholder.
+    // Conifer idea:
+    // T = trunk bud (keeps going up, emits whorls)
+    // B = primary scaffold branch (long)
+    // b = twig / secondary branch (short, tufted)
+    
     lsys.setSeed(p.seed);
-    // Placeholder for now:
-    lsys.setAxiom("F");
-    lsys.addRule('F', "FF", 1.0f);
+    lsys.clearRules();
+    lsys.setAxiom("FFFFQ");
+
+    // ---- TRUNK / LEADER (tiers) ----
+    // Key idea: T should ALMOST ALWAYS continue as "...T"
+    // Put several F between whorls to create visible spacing (layers).
+    // Use ^ tokens to pitch branches out ~60-90 degrees; phyllotaxis roll handles 360 distribution.
+    lsys.addRule('Q', "FF[^B][^B][^B]F[^B][^B]F[^B][^B][^B][^B]R",       1.00f); // 3-branch whorl
+    lsys.addRule('R', "FF[^B][^B][^B]F[^B][^B]F[^B][^B][^B][^B]S",       1.00f); // 3-branch whorl
+    lsys.addRule('S', "FF[^B][^B][^B]F[^B][^B]F[^B][^B][^B][^B]T",       1.00f); // 3-branch whorl
+    lsys.addRule('T', "FF[^B][^B][^B]F[^B][^B]F[^B][^B][^B][^B]T",       1.00f); // 3-branch whorl
+    //lsys.addRule('T', "F[^^B][^^B][^^B]T",       1.00f); // 3-branch whorl
+    //lsys.addRule('T', "FF[^^B][^^B][^^B]T",       1.00f); // 3-branch whorl
+
+    //lsys.addRule('T', "FF[^^^B][^^^B][^^^B][^^^B]T", 1.00f); // 4-branch whorl (denser)
+    
+    lsys.addRule('T', "FT",                   0.50f); // GAP: This separates the layers!
+    //lsys.addRule('T', "F",                     0.05f); // Stop growing (top of tree)
+
+    // ---- PRIMARY BRANCH (scaffold) ----
+    // Mostly extends, sometimes emits secondary twigs.
+    lsys.addRule('B', "FB",                1.00f);  // extend 
+    lsys.addRule('B', "FFB",               0.35f);  // occasional longer run 0.35
+    lsys.addRule('B', "F[+b]B",            0.45f);  // twig 0.28
+    lsys.addRule('B', "F[-b]B",            0.45f);  // twig
+    lsys.addRule('B', "F[+b][-b]B",        1.20f);  // small tuft 0.18
+    lsys.addRule('B', "F[+b][-b][+b][-b]B",        1.20f);  // small tuft 0.18
+    lsys.addRule('B', "F",                0.45f);  // stop extending0.25
+    //lsys.addRule('B', "",                  0.10f);  // die off (rare)0.10
+
+   /* lsys.addRule('B', "FFB",                1.00f);  // extend 
+    lsys.addRule('B', "FFFB",               0.35f);  // occasional longer run 0.35
+    lsys.addRule('B', "F[&&b]B",            0.45f);  // twig 0.28
+    lsys.addRule('B', "F[^^b]B",            0.45f);  // twig
+    lsys.addRule('B', "F[&&b][^^b]B",        1.20f);  // small tuft 0.18
+    lsys.addRule('B', "F[&&b][^^b][&&b][^^b]B",        1.20f);  // small tuft 0.18
+    lsys.addRule('B', "F",                0.45f);  // stop extending0.25
+    //lsys.addRule('B', "",                  0.10f);  // die off (rare)0.10*/
+
+    // ---- SECONDARY TWIGS ----
+   lsys.addRule('b', "b[+b][-b]b",        1.00f);
+    lsys.addRule('b', "b[+b]b",            0.50f);
+    lsys.addRule('b', "b[-b]b",            0.50f);
+   lsys.addRule('b', "F",                 0.40f);
 }
 
 
