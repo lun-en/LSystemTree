@@ -3,10 +3,13 @@
 #include <vector>
 #include <cstdint> 
 #include <glm/glm.hpp>
+#include <random>
 
 struct VertexPN {
     glm::vec3 pos;
     glm::vec3 normal;
+    glm::vec2 uv;
+    glm::vec4 tangent; // xyz = tangent, w = sign (usually +1 or -1)
 };
 //NEW: Tree presets
 enum class TreePreset
@@ -41,7 +44,7 @@ struct TreeParams {
     glm::vec3 baseTranslation = glm::vec3(0.0f, -3.0f, 0.0f);
 
     // NEW: reproducibility + organic variation
-    std::uint32_t seed = 1337;
+    std::uint32_t seed = std::random_device{}();
 
     float angleJitterDeg = 10.0f;  // jitter applied to yaw/pitch/roll ops
     float lengthJitterFrac = 0.15f;  // +/- fraction per segment
@@ -112,6 +115,13 @@ struct TreeParams {
     // 1.0 = no extra speed-up, 0.90–0.98 = subtle speed-up
     float trunkTaperTopMult = 0.95f;
 
+    // --- Bark texture mapping (world-space repeat size) ---
+    // Smaller = more tiling (more detail). These are in *world units per texture repeat*.
+    float barkRepeatWorldU = 0.50f; // around circumference
+    float barkRepeatWorldV = 0.50f; // along branch/trunk length
+
+    // If true, each new branch starts its bark V at 0 (nice consistent bark scale per-branch).
+    bool  resetBarkVOnBranch = true;
 
 };
 

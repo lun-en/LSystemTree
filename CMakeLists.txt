@@ -50,6 +50,9 @@ LinkGLAD(opengl-template PRIVATE)
 include(${CMAKE_DIR}/LinkGLM.cmake)
 LinkGLM(opengl-template PRIVATE)
 
+include(${CMAKE_DIR}/LinkSTB.cmake)
+LinkSTB(opengl-template PRIVATE)
+
 find_package(OpenGL REQUIRED)
 if (OpenGL_FOUND)
     # NOTE: the original template had a typo OPENGL_INCLDUE_DIRS. This is the correct variable.

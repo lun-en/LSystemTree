@@ -18,6 +18,8 @@ struct TurtleState {
     int   depth;        // global-ish segment count along current path
     int   localDepth;   // NEW: segments since the last '[' (branch start)
     int branchesAtNode;   // NEW
+
+    float barkV = 0.0f;     // NEW: running V (world units) for bark mapping
     
     // Crookedness state (bounded “wiggle” angles)
     float crookYaw = 0.0f;
@@ -35,15 +37,36 @@ static void appendFrustumSegment(std::vector<VertexPN>& out,
     float radiusBottom,
     float radiusTop,
     const glm::mat4& transform,
-    int radialSegments)
+    int radialSegments,
+    float v0World,
+    float v1World,
+    float barkRepeatWorldU,
+    float barkRepeatWorldV)
 {
     const float TWO_PI = 6.28318530718f;
+
+    const float safeLen = std::max(length, 1e-6f);
+    const float k = (radiusTop - radiusBottom) / safeLen; // slope for frustum normal
+
+    const float uWorld = std::max(barkRepeatWorldU, 1e-6f);
+    const float vWorld = std::max(barkRepeatWorldV, 1e-6f);
+
     const glm::mat3 normalMatrix = glm::mat3(transform);
 
     auto XformPos = [&](const glm::vec3& p) {
         glm::vec4 wp = transform * glm::vec4(p, 1.0f);
         return glm::vec3(wp);
     };
+
+    auto XformDir = [&](const glm::vec3& d) {
+        return glm::normalize(normalMatrix * d);
+    };
+
+    const float avgR = 0.5f * (radiusBottom + radiusTop);
+
+    // Pre-scale V once (world -> UV space)
+    const float vb = v0World / vWorld;
+    const float vt = v1World / vWorld;
 
     for (int i = 0; i < radialSegments; ++i) {
         float t0 = static_cast<float>(i) / radialSegments;
@@ -57,22 +80,47 @@ static void appendFrustumSegment(std::vector<VertexPN>& out,
         glm::vec3 p0t(radiusTop * std::cos(a0), length, radiusTop * std::sin(a0));
         glm::vec3 p1t(radiusTop * std::cos(a1), length, radiusTop * std::sin(a1));
 
-        float aMid = 0.5f * (a0 + a1);
-        glm::vec3 localN(std::cos(aMid), 0.0f, std::sin(aMid));
-        glm::vec3 worldN = glm::normalize(normalMatrix * localN);
+        // Better frustum-side normals (includes taper slope)
+        glm::vec3 n0 = glm::normalize(glm::vec3(std::cos(a0), -k, std::sin(a0)));
+        glm::vec3 n1 = glm::normalize(glm::vec3(std::cos(a1), -k, std::sin(a1)));
 
+        // Tangent direction for increasing U (around the trunk)
+        glm::vec3 t0dir = glm::normalize(glm::vec3(-std::sin(a0), 0.0f, std::cos(a0)));
+        glm::vec3 t1dir = glm::normalize(glm::vec3(-std::sin(a1), 0.0f, std::cos(a1)));
+
+        // World-space values
         glm::vec3 tp0b = XformPos(p0b);
         glm::vec3 tp1b = XformPos(p1b);
         glm::vec3 tp0t = XformPos(p0t);
         glm::vec3 tp1t = XformPos(p1t);
 
-        out.push_back({ tp0b, worldN });
-        out.push_back({ tp0t, worldN });
-        out.push_back({ tp1t, worldN });
+        glm::vec3 wn0 = XformDir(n0);
+        glm::vec3 wn1 = XformDir(n1);
 
-        out.push_back({ tp0b, worldN });
-        out.push_back({ tp1t, worldN });
-        out.push_back({ tp1b, worldN });
+        glm::vec3 wt0 = XformDir(t0dir);
+        glm::vec3 wt1 = XformDir(t1dir);
+
+        float repeatsU = std::max(1.0f, std::round((TWO_PI * avgR) / uWorld));
+        float u0 = t0 * repeatsU;
+        float u1 = t1 * repeatsU;
+
+        auto push = [&](const glm::vec3& wp,
+            const glm::vec3& wn,
+            const glm::vec3& wt,
+            float u, float v)
+        {
+            out.push_back({ wp, wn, glm::vec2(u, v), glm::vec4(wt, 1.0f) });
+        };
+
+        // Tri 1: p0b, p0t, p1t
+        push(tp0b, wn0, wt0, u0, vb);
+        push(tp0t, wn0, wt0, u0, vt);
+        push(tp1t, wn1, wt1, u1, vt);
+
+        // Tri 2: p0b, p1t, p1b
+        push(tp0b, wn0, wt0, u0, vb);
+        push(tp1t, wn1, wt1, u1, vt);
+        push(tp1b, wn1, wt1, u1, vb);
     }
 }
 
@@ -87,11 +135,24 @@ static void appendSphere(std::vector<VertexPN>& out,
 
     const glm::mat3 normalMatrix = glm::mat3(transform);
 
-    auto push = [&](const glm::vec3& localPos, const glm::vec3& localN) {
-        glm::vec4 wp4 = transform * glm::vec4(localPos, 1.0f);
-        glm::vec3 wp = glm::vec3(wp4);
-        glm::vec3 wn = glm::normalize(normalMatrix * localN);
-        out.push_back({ wp, wn });
+    auto XformPos = [&](const glm::vec3& p) {
+        glm::vec4 wp4 = transform * glm::vec4(p, 1.0f);
+        return glm::vec3(wp4);
+    };
+
+    auto XformDir = [&](const glm::vec3& d) {
+        return glm::normalize(normalMatrix * d);
+    };
+
+    auto push = [&](const glm::vec3& localPos,
+        const glm::vec3& localN,
+        const glm::vec3& localT,
+        float u, float v)
+    {
+        glm::vec3 wp = XformPos(localPos);
+        glm::vec3 wn = XformDir(localN);
+        glm::vec3 wt = XformDir(localT);
+        out.push_back({ wp, wn, glm::vec2(u, v), glm::vec4(wt, 1.0f) });
     };
 
     for (int lat = 0; lat < latSegments; ++lat) {
@@ -118,13 +179,17 @@ static void appendSphere(std::vector<VertexPN>& out,
             glm::vec3 p10 = radius * n10;
             glm::vec3 p11 = radius * n11;
 
-            push(p00, n00);
-            push(p10, n10);
-            push(p11, n11);
+            // Tangent for increasing theta (u direction)
+            glm::vec3 t0(-std::sin(th0), 0.0f, std::cos(th0));
+            glm::vec3 t1(-std::sin(th1), 0.0f, std::cos(th1));
 
-            push(p00, n00);
-            push(p11, n11);
-            push(p01, n01);
+            push(p00, n00, t0, u0, v0);
+            push(p10, n10, t0, u0, v1);
+            push(p11, n11, t1, u1, v1);
+
+            push(p00, n00, t0, u0, v0);
+            push(p11, n11, t1, u1, v1);
+            push(p01, n01, t1, u1, v0);
         }
     }
 }
@@ -148,12 +213,15 @@ static void SetupDeciduousGrammar(LSystem& lsys, const TreeParams& p)
     // Lower-trunk staging: denser scaffold for first ~6 segments, then handoff to X
     // Also spreads 4 scaffolds across TWO heights (Fix B style)
     lsys.addRule('K', "FL", 1.0f);
-    lsys.addRule('L', "F[-A][-A]F[-A][-A]F[-A][-A]F[-A][-A]M", 1.0f);
-    lsys.addRule('M', "[-A]F[+A][-A]F[+A][-A]F[+A][-A]F[+A]N", 1.0f);         // 4 scaffolds, split across 2 nodes
-    lsys.addRule('N', "F[+A][-A]F[+A][-A]O", 1.0f);         // same
-    lsys.addRule('O', "[-A]F[+A][-A]F[+A]P", 1.0f);                   // lighter as we go up
-    lsys.addRule('P', "F[-A][-A]Q", 1.0f);
-    lsys.addRule('Q', "FX", 1.0f);
+    //lsys.addRule('L', "F[-A][-A]F[-A][-A]F[-A][-A]F[-A][-A]M", 0.5f);
+    lsys.addRule('L', "F[A][A]F[A][+M]F[A][A]F[A][A]M", 1.0f);
+    //lsys.addRule('M', "F[-A]F[+A][-A]F[+A][-A]F[+A][-A]F[+A]N", 0.5f);         // 4 scaffolds, split across 2 nodes
+    lsys.addRule('M', "F[++A]F[++A][++A]F[++N][++A]F[++A][++A]F[++A]++N", 1.0f);         // 4 scaffolds, split across 2 nodes
+    //lsys.addRule('N', "FF[+A][-A]F[+A][-A]O", 0.5f);         // same
+    lsys.addRule('N', "FF[++A][--O]F[++A][++A]--O", 1.0f);         // same
+    lsys.addRule('O', "F[-A]F[+A][-A]F[+A]P", 1.0f);                   // lighter as we go up
+    lsys.addRule('P', "FF[-A][-A]Q", 1.0f);
+    lsys.addRule('Q', "FFX^X", 1.0f);
 
     // --- X: LOWER trunk bud (denser scaffold zone) ---
     // baseline: 2 scaffolds per node
@@ -189,26 +257,30 @@ static void SetupDeciduousGrammar(LSystem& lsys, const TreeParams& p)
     //lsys.addRule('T', "", 0.005f);
 
     // --- A: big branch bud (more lateral structure early, still controlled) ---
-    lsys.addRule('A', "FA", 0.50f);
-    lsys.addRule('A', "F[+Y]FA", 0.55f);
-    lsys.addRule('A', "F[-Y]FA", 0.55f);
-    lsys.addRule('A', "F[+Y][-Y]FA", 0.22f);
-    lsys.addRule('A', "FY", 0.18f);
+    lsys.addRule('A', "a", 0.5f);
+    lsys.addRule('A', "", 0.5f);
+
+    // --- A: big branch bud (more lateral structure early, still controlled) ---
+    lsys.addRule('a', "Fa", 0.50f);
+    lsys.addRule('a', "F[+Y]Fa", 0.55f);
+    lsys.addRule('a', "F[-Y]Fa", 0.55f);
+    lsys.addRule('a', "F[+Y][-Y]Fa", 0.22f);
+    lsys.addRule('a', "FY", 0.18f);
 
     // ---- PRIMARY BRANCH (scaffold) ----
     // Mostly extends, sometimes emits secondary twigs.
     lsys.addRule('Y', "FY",                1.00f);  // extend 
     lsys.addRule('Y', "FFY",               0.50f);  // occasional longer run 0.35
-    lsys.addRule('Y', "F[+b][-b]Y", 1.20f);  // twig 0.28
+    lsys.addRule('Y', "F[+b][-b]Y", 1.00f);  // twig 0.28
     lsys.addRule('Y', "F[+b]Y", 0.60f);  // twig
     lsys.addRule('Y', "F[-b]Y", 0.60f);  // small tuft 0.18
     lsys.addRule('Y', "FY", 0.30f);  // stop extending0.25
-    lsys.addRule('Y', "F", 0.50f);  // die off (rare)0.10
+    lsys.addRule('Y', "FY", 0.50f);  // die off (rare)0.10
 
     // ---- SECONDARY TWIGS ----
-    lsys.addRule('b', "F[+b][-b]Y", 1.00f);
-    lsys.addRule('b', "F[+b]b", 0.50f);
-    lsys.addRule('b', "F[-b]Y", 0.50f);
+    lsys.addRule('b', "F[+b][-b]Y", 0.80f);
+    lsys.addRule('b', "F[+b]b", 0.40f);
+    lsys.addRule('b', "F[-b]Y", 0.40f);
     lsys.addRule('b', "F", 0.80f);
 
     // --- C: crown bud (adds �air gaps� via FC so it�s less bunched-up) ---
@@ -346,6 +418,7 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
     cur.depth = 0;
     cur.localDepth = 0;
     cur.branchesAtNode = 0;
+    cur.barkV = 0.0f;
 
     // crookedness
     cur.crookYaw = cur.crookPitch = cur.crookRoll = 0.0f;
@@ -547,12 +620,27 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
             // Draw cutoff (VISUAL) only
             bool draw = (rBottom > p.minRadius);
 
+            float v0World = cur.barkV;
+            float v1World = cur.barkV + len;
+
             if (draw) {
                 if (p.addSpheres) {
                     appendSphere(verts, rBottom, cur.transform, p.sphereLatSegments, p.sphereLonSegments);
                 }
-                appendFrustumSegment(verts, len, rBottom, rTop, cur.transform, p.radialSegments);
+                appendFrustumSegment(verts,
+                    len,
+                    rBottom,
+                    rTop,
+                    cur.transform,
+                    p.radialSegments,
+                    v0World,
+                    v1World,
+                    p.barkRepeatWorldU,
+                    p.barkRepeatWorldV);
             }
+
+            // Advance bark mapping even if we stop drawing (keeps UVs consistent)
+            cur.barkV = v1World;
 
             // ALWAYS advance + decay, even if not drawing
             cur.transform = cur.transform * glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, len, 0.0f));
@@ -673,6 +761,8 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
             cur.localDepth = 0;
             cur.branchesAtNode = 0;
             cur.depth = 0;               // IMPORTANT: don't inherit trunk depth
+
+            if (p.resetBarkVOnBranch) cur.barkV = 0.0f;
 
             // branch thickness/length reduction when entering a branch
             cur.radius *= p.branchRadiusDecay;
