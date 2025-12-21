@@ -177,22 +177,90 @@ int main(int argc, char** argv) {
     params.preset = TreePreset::Deciduous;
 
     bool solidMode = false; // NEW: solid bark for screenshots
+    bool DeciduousMode = true;
+    
+    // Iteration variables
+    bool OWitFlag = false;
+    int iterationCount = 1; // Default
+
+    // Seed variables
+    bool seedFlag = false;
+    int seedValue = 2025;      // Default
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
 
-        if (arg == "--solid" || arg == "solid" || arg == "--flat" || arg == "flat" || arg == "-s") {
+        // --- HELP LOGIC ---
+        if (arg == "-h" || arg == "--help") {
+            std::cout << "Usage: ./program.exe [options]\n\n"
+                << "Options:\n"
+                << "  -d, --deciduous     Set tree type to Deciduous (default)\n"
+                << "  -c, --conifer       Set tree type to Conifer/Pine\n"
+                << "  -s, --solid         Enable solid bark mode (for screenshots)\n"
+                << "  -i <number>         Set iteration count (default: 1)\n"
+                << "  -seed <number>      Set generation seed (default: 2025)\n"
+                << "  -h, --help          Show this help message\n\n"
+                << "Examples:\n"
+                << "  ./program.exe -c -i 12 -s\n"
+                << "  ./program.exe -d -seed 12345\n";
+            exit(0); // Stop program here
+        }
+        else if (arg == "--solid" || arg == "solid" || arg == "--flat" || arg == "flat" || arg == "-s") {
             solidMode = true;
         }
-        else if (arg == "deciduous" || arg == "-d") {
+        else if (arg == "deciduous" || arg == "--deciduous" || arg == "-d") {
             params.preset = TreePreset::Deciduous;
+            DeciduousMode = true;
         }
-        else if (arg == "conifer" || arg == "pine" || arg == "-c") {
+        else if (arg == "conifer" || arg == "--conifer" || arg == "-c") {
             params.preset = TreePreset::Conifer;
+            DeciduousMode = false;
+        }
+        // --- ITERATION LOGIC ---
+        else if (arg == "-i") {
+            if (i + 1 < argc) {
+                i++; // Move to the number
+                try {
+                    int parsedVal = std::stoi(argv[i]);
+
+                    // Catch negative numbers
+                    if (parsedVal < 0) {
+                        std::cout << "Warning: Iterations cannot be negative (" << parsedVal << "). Defaulting to 0.\n";
+                        iterationCount = 0;
+                    }
+                    else {
+                        iterationCount = parsedVal;
+                    }
+                    OWitFlag = true;
+                }
+                catch (...) {
+                    std::cout << "Error: Invalid number provided for -i\n";
+                }
+            }
+            else {
+                std::cout << "Error: -i requires a number argument (e.g., -i 5).\n";
+            }
+        }
+        // --- SEED LOGIC ---
+        else if (arg == "-seed" || arg == "--seed") {
+            if (i + 1 < argc) {
+                i++; // Move to the number
+                try {
+                    seedValue = std::stoi(argv[i]);
+                    seedFlag = true;
+                    std::cout << "Seed set to: " << seedValue << "\n";
+                }
+                catch (...) {
+                    std::cout << "Error: Invalid number provided for -seed\n";
+                }
+            }
+            else {
+                std::cout << "Error: -seed requires a number argument.\n";
+            }
         }
         else {
             std::cout << "Unknown arg: " << arg
-                << " (use: deciduous | conifer | pine | --solid)\n";
+                << " (use: -h or --help to get help.)\n";
         }
     }
 
@@ -324,7 +392,7 @@ int main(int argc, char** argv) {
         params.addSpheres = true;
 
         // Spruce: enough iterations for tufting, without blowing up too hard
-        params.iterations = 13;
+        params.iterations = 15;
 
         // Trunk / taper: avoid “everything shrinks linearly with height”
         params.baseRadius = 0.30f;
@@ -410,6 +478,14 @@ int main(int argc, char** argv) {
     else { // Deciduous
         params.barkRepeatWorldU = 1.60f;
         params.barkRepeatWorldV = 2.60f;
+    }
+
+    if (OWitFlag) {
+        params.iterations = iterationCount;
+    }
+
+    if (seedFlag) {
+        params.seed = seedValue;
     }
 
     std::vector<VertexPN> verts;
@@ -625,9 +701,11 @@ int main(int argc, char** argv) {
     glUniform1i(uNormalTexLoc, 1);
     glUniform1i(uRoughTexLoc, 2);
 
-    glm::vec3 camPos(0.0f, 10.0f, 45.0f);
-    glm::vec3 camTarget(0.0f, 5.0f, 0.0f);
+    glm::vec3 camPos(0.0f, 8.0f, 32.0f);
+    glm::vec3 camTarget(0.0f, 8.0f, 0.0f);
 
+    //if (DeciduousMode) {glm::vec3 camPos(0.0f, 10.0f, 20.0f); glm::vec3 camTarget(0.0f, 5.0f, 0.0f);}
+    //else { glm::vec3 camPos(0.0f, 15.0f, 25.0f); glm::vec3 camTarget(0.0f, 7.5f, 0.0f); }
 
     while (!glfwWindowShouldClose(window)) {
         ProcessInput(window);

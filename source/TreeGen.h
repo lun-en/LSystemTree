@@ -18,7 +18,6 @@ enum class TreePreset
     Conifer
 };
 
-
 struct TreeParams {
     //Adding the preset, add this not affect the rest of the pipeline
     TreePreset preset = TreePreset::Deciduous;
