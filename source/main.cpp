@@ -74,6 +74,26 @@ static fs::path FindProjectRoot()
     return fs::current_path(); // fallback
 }
 
+static GLuint Make1x1TextureRGBA(unsigned char r, unsigned char g, unsigned char b, unsigned char a)
+{
+    GLuint tex = 0;
+    glGenTextures(1, &tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
+
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+    unsigned char px[4] = { r, g, b, a };
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return tex;
+}
+
 static GLuint LoadTexture2D(const fs::path& path, bool srgb)
 {
     int w = 0, h = 0, comp = 0;
@@ -156,19 +176,30 @@ int main(int argc, char** argv) {
     //default preset for NOW
     params.preset = TreePreset::Deciduous;
 
-    if (argc >= 2) {
-        std::string arg = argv[1]; 
-        if (arg == "deciduous") {
+    bool solidMode = false; // NEW: solid bark for screenshots
+
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+
+        if (arg == "--solid" || arg == "solid" || arg == "--flat" || arg == "flat" || arg == "-s") {
+            solidMode = true;
+        }
+        else if (arg == "deciduous" || arg == "-d") {
             params.preset = TreePreset::Deciduous;
-
-        } else if (arg == "conifer" || arg == "pine") {
+        }
+        else if (arg == "conifer" || arg == "pine" || arg == "-c") {
             params.preset = TreePreset::Conifer;
-
-        } else {
-            std::cout << "Unknown preset: " << arg
-                    << " (use: deciduous | conifer | pine)\n";
+        }
+        else {
+            std::cout << "Unknown arg: " << arg
+                << " (use: deciduous | conifer | pine | --solid)\n";
         }
     }
+
+    if (solidMode) {
+        std::cout << "SOLID MODE enabled (light gray bark, no texture detail)\n";
+    }
+
 
     fs::path root = FindProjectRoot();
     fs::path texRoot = root / "assets" / "textures";
@@ -188,21 +219,34 @@ int main(int argc, char** argv) {
         roughPath = p / "bark_brown_02_rough_1k.png";
     }
 
-    std::cout << "Loading bark textures from:\n"
-        << diffPath << "\n"
-        << norPath << "\n"
-        << roughPath << "\n";
+    GLuint texAlbedo = 0, texNormal = 0, texRough = 0;
 
-    std::cout << "Loading albedo...\n";
-    GLuint texAlbedo = LoadTexture2D(diffPath, true);
+    if (!solidMode) {
+        std::cout << "Loading bark textures from:\n"
+            << diffPath << "\n"
+            << norPath << "\n"
+            << roughPath << "\n";
 
-    std::cout << "Loading normal...\n";
-    GLuint texNormal = LoadTexture2D(norPath, false);
+        std::cout << "Loading albedo...\n";
+        texAlbedo = LoadTexture2D(diffPath, true);
 
-    std::cout << "Loading roughness...\n";
-    GLuint texRough = LoadTexture2D(roughPath, false);
+        std::cout << "Loading normal...\n";
+        texNormal = LoadTexture2D(norPath, false);
 
-    std::cout << "All textures loaded.\n";
+        std::cout << "Loading roughness...\n";
+        texRough = LoadTexture2D(roughPath, false);
+
+        std::cout << "All textures loaded.\n";
+    }
+    else {
+        // Solid-look “textures”:
+        // - Albedo: white (so uBaseColor controls the final color)
+        // - Normal: flat normal (no bumps)
+        // - Roughness: constant mid/high roughness (less shiny)
+        texAlbedo = Make1x1TextureRGBA(255, 255, 255, 255);
+        texNormal = Make1x1TextureRGBA(128, 128, 255, 255);
+        texRough = Make1x1TextureRGBA(200, 200, 200, 255);
+    }
 
     params.iterations = 15;          // start lower to avoid twig explosion; bump to 15 if too sparse
 
@@ -274,88 +318,89 @@ int main(int argc, char** argv) {
 
     params.trunkTaperTopMult = 0.95f;
 
-
-    // ---- Preset-specific overrides for the CONIFER tree ----
+    //new conifer params
     if (params.preset == TreePreset::Conifer) {
-        // Geometry: avoid spheres (too many polys + hides junction issues)
+        // Keep your junctio/n spheres if you like the look (optional)
         params.addSpheres = true;
-    
-        // Conifers explode fast — start lower than deciduous
+
+        // Spruce: enough iterations for tufting, without blowing up too hard
         params.iterations = 13;
-    
-        // Trunk / taper
-        params.baseRadius = 0.38f;
-        params.baseLength   = 1.35f;     // slightly shorter segments = more "nodes"
-        params.radiusDecayF = 0.95f;     // taper
-        params.lengthDecayF = 0.97f;    // slows length shrink => less "bunched"
-    
-        // Branch scaling when entering '['
-        params.branchRadiusDecay = 0.20f;  // how fast branches get thinner ok
-        params.branchLengthDecay = 0.60f;  // branches start shorter than trunk ok
-    
-        // Angle controls (used by + - & ^ \ /)
-        params.branchAngleDeg = 80.0f;   // tighter, more pine-like 22.0 at angle 90 to the trunk
-        params.angleJitterDeg = 10.0f;    // less chaotic than deciduous
-    
-        params.lengthJitterFrac = 0.00f; // more consistent segment lengths
-        params.radiusJitterFrac = 0.00f; // less �sparkly� thickness noise
-    
-        // Use phyllotaxis to distribute branches around trunk
+
+        // Trunk / taper: avoid “everything shrinks linearly with height”
+        params.baseRadius = 0.30f;
+        params.baseLength = 1.5f;   // slightly shorter = more whorl nodes
+        params.radiusDecayF = 0.955f;  // gentler continuous taper (big difference)
+        params.lengthDecayF = 0.955f;  // trunk segments don’t shrink away quickly
+
+        // Enable curved taper for trunk (keeps base sturdy, tapers more near the top)
+        params.enableTrunkTaperCurve = true;
+        params.trunkTaperPower = 1.35f;
+        params.trunkTaperTopMult = 0.75f; //0.92
+
+        //enable scaffold taper curve 
+        params.enableScaffoldTaperCurve = true;
+
+
+        // Branch scaling at '[' : THIS fixes “branches are too thin”
+        params.branchRadiusDecay = 0.38f;  // (was 0.20!) big improvement to scaffold thickness
+        params.branchLengthDecay = 0.60f;  // branches start shorter than trunk, but not tiny
+
+        // Angles: smaller angle + grammar controls whorl tilt (spruce look)
+        params.branchAngleDeg = 35.0f;
+        params.angleJitterDeg = 5.0f;
+
+        // Mild geometry noise (breaks symmetry without chaos)
+        params.lengthJitterFrac = 0.05f;
+        params.radiusJitterFrac = 0.02f;
+
+        // Distribute branches around trunk
         params.usePhyllotaxisRoll = true;
-        params.phyllotaxisDeg = 1.5f;
-        params.branchRollJitterDeg = 12.0f; //bit more than 6 so won't look planar
-    
-        // IMPORTANT: your interpreter applies a random pitch kick at '['.
-        // For conifers, we pitch explicitly using '&' in the grammar, so disable the random kick:
-        params.branchPitchMinDeg = 0.0f;
-        params.branchPitchMaxDeg = 0.0f;
-    
-        // Reduce branch crowding
-        params.maxBranchesPerNode = 128;
+        params.phyllotaxisDeg = 137.5f;
+        params.branchRollJitterDeg = 10.0f;
+
+        // Allow a small random pitch kick to break perfect tier symmetry
+        params.branchPitchMinDeg = 3.0f;
+        params.branchPitchMaxDeg = 10.0f;
+
+        // Branch crowding controls
+        params.maxBranchesPerNode = 115;
         params.minBranchSpacing = 1;
-    
-        //Branch skipping 
+
+        // Optional skipping (creates gaps, reduces “uniform cone” feeling)
         params.enableBranchSkipping = false;
-        params.branchSkipMaxProb = 0.25f; // keep it mild for now
+        params.branchSkipMaxProb = 0.15f;
         params.branchSkipStartDepth = 3;
-        params.minRadiusForBranch = 0.040f;
-        params.depthFullEffect = 10;
-    
-        // Optional: mild gravity bend helps drooping tips
+        params.minRadiusForBranch = 0.010f;
+
+        // IMPORTANT: keep trunk from entering “twig scaling” too early
+        params.depthFullEffect = 40;
+
+        // Tropism: for spruce, use slight downward bend (droop)
         params.enableTropism = true;
         params.tropismDir = glm::vec3(0, 1, 0);
-        params.tropismStrength = 0.010f; //0.010f
-        params.tropismThinBoost = 0.16f;
-    
-        // Keep twigs from becoming hair
-        params.twigLengthBoost = 0.6f;
-        params.maxLenToRadius = 16.0f; 
-    
-        params.enableTrunkTaperCurve = false;
-        params.trunkTaperPower = 2.2f;
-        params.trunkTaperTopMult = 0.95f;
-    
-        //pruning / visibility
-        params.enableRadiusPruning = true;
-        params.pruneRadius = 0.0018f;
-    
-        params.minRadius = 0.0010f;
-        params.minLength = 0.010f;
-    
-        //Enable croockness
+        params.tropismStrength = 0.008f;
+        params.tropismThinBoost = 0.25f;
+
+        // Twigs: don’t over-shorten (old 0.6 made upper structure collapse)
+        params.twigLengthBoost = 0.20f;
+        params.maxLenToRadius = 14.0f;
+
+        // Pruning / visibility (keeps tips from turning into hair)
+        params.enableRadiusPruning = false;
+        params.pruneRadius = 0.0015f;
+
+        params.minRadius = 0.0012f;
+        params.minLength = 0.012f;
+
+        // Crookedness optional (leave off for now)
         params.enableCrookedness = false;
-    
-        // stronger than 1, but not insane
-        params.crookStrength = 2.4f;
-    
-        // bigger noise = more zig-zag
-        params.crookAccelDeg = 18.0f;
-    
-        // smoothing: 0.85–0.95 is the useful range
+        params.crookStrength = 0.5f;
+        params.crookAccelDeg = 20.2f;
         params.crookDamping = 0.10f;
-    
-        // Slightly lower mesh resolution for performance (optional)
-        params.radialSegments = 12;
+
+        params.radialSegments = 8;
+
+        params.enableCrookedness = true;
     }
 
     if (params.preset == TreePreset::Conifer) {
@@ -580,7 +625,7 @@ int main(int argc, char** argv) {
     glUniform1i(uNormalTexLoc, 1);
     glUniform1i(uRoughTexLoc, 2);
 
-    glm::vec3 camPos(0.0f, 10.0f, 25.0f);
+    glm::vec3 camPos(0.0f, 10.0f, 45.0f);
     glm::vec3 camTarget(0.0f, 5.0f, 0.0f);
 
 
@@ -615,7 +660,9 @@ int main(int argc, char** argv) {
 
         // Material params
         //glUniform3f(uBaseColorLoc, 0.55f, 0.27f, 0.07f);
-        glUniform3f(uBaseColorLoc, 1.0f, 1.0f, 1.0f);
+        if (solidMode) glUniform3f(uBaseColorLoc, 0.75f, 0.75f, 0.75f); // light gray
+        else           glUniform3f(uBaseColorLoc, 1.0f, 1.0f, 1.0f);
+
         glUniform3f(uCamPosLoc, camPos.x, camPos.y, camPos.z);
 
         glUniform1f(glGetUniformLocation(prog, "uMacroFreq"), 0.12f);
@@ -625,11 +672,14 @@ int main(int argc, char** argv) {
 
         glUniform1f(uNormalStrLoc, 1.0f);
         glUniform1f(uSpecPowerLoc, 32.0f);
-        glUniform1f(uSpecStrLoc, 0.35f);
+        glUniform1f(uSpecStrLoc, solidMode ? 0.15f : 0.35f);
         glUniform1i(uFlipNormalYLoc, 0); // if bumps look "inside out", change to 1
 
         //glUniform3f(uColorLoc, 0.55f, 0.27f, 0.07f);
         glUniform3f(uAmbientLoc, 0.75f, 0.75f, 0.75f);
+
+        if (solidMode) glUniform3f(uAmbientLoc, 0.50f, 0.50f, 0.50f); // light gray
+        else           glUniform3f(uAmbientLoc, 0.75f, 0.75f, 0.75f);
 
         glm::vec3 lightDir = glm::normalize(glm::vec3(0.4f, 1.0f, 0.3f));
         glUniform3f(uLightDirLoc, lightDir.x, lightDir.y, lightDir.z);

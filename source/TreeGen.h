@@ -123,6 +123,8 @@ struct TreeParams {
     // If true, each new branch starts its bark V at 0 (nice consistent bark scale per-branch).
     bool  resetBarkVOnBranch = true;
 
+    bool enableScaffoldTaperCurve = false;
+
 };
 
 std::vector<VertexPN> BuildTreeVertices(const TreeParams& p);

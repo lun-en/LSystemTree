@@ -293,58 +293,93 @@ static void SetupDeciduousGrammar(LSystem& lsys, const TreeParams& p)
 
 static void SetupConiferGrammar(LSystem& lsys, const TreeParams& p)
 {
-    // Conifer idea:
-    // T = trunk bud (keeps going up, emits whorls)
-    // B = primary scaffold branch (long)
-    // b = twig / secondary branch (short, tufted)
-    
+    // Spruce-style conifer:
+    // - Bare trunk first
+    // - Crown zones: R (lower), S (mid), T (upper), U (top)
+    // - Scaffold classes: C (medium), B (long), D (short)
+    // - Terminal tuft: E
+    // - Twigs: b
+    //
+    // We rely on:
+    // - '^' to pitch scaffolds outward (with branchAngleDeg ~ 35)
+    // - phyllotaxis roll for 360° distribution
+    // - tropism (downward) for droop
+
     lsys.setSeed(p.seed);
     lsys.clearRules();
-    lsys.setAxiom("FFFFQ");
 
-    // ---- TRUNK / LEADER (tiers) ----
-    // Key idea: T should ALMOST ALWAYS continue as "...T"
-    // Put several F between whorls to create visible spacing (layers).
-    // Use ^ tokens to pitch branches out ~60-90 degrees; phyllotaxis roll handles 360 distribution.
-    lsys.addRule('Q', "FF[^B][^B][^B]F[^B][^B]F[^B][^B][^B][^B]R",       1.00f); // 3-branch whorl
-    lsys.addRule('R', "FF[^B][^B][^B]F[^B][^B]F[^B][^B][^B][^B]S",       1.00f); // 3-branch whorl
-    lsys.addRule('S', "FF[^B][^B][^B]F[^B][^B]F[^B][^B][^B][^B]T",       1.00f); // 3-branch whorl
-    lsys.addRule('T', "FF[^B][^B][^B]F[^B][^B]F[^B][^B][^B][^B]T",       1.00f); // 3-branch whorl
-    //lsys.addRule('T', "F[^^B][^^B][^^B]T",       1.00f); // 3-branch whorl
-    //lsys.addRule('T', "FF[^^B][^^B][^^B]T",       1.00f); // 3-branch whorl
+    // Bare trunk before crown starts (adjust count: 8–18 for a “mature spruce” feel)
+    lsys.setAxiom("FFFR");
 
-    //lsys.addRule('T', "FF[^^^B][^^^B][^^^B][^^^B]T", 1.00f); // 4-branch whorl (denser)
-    
-    lsys.addRule('T', "FT",                   0.50f); // GAP: This separates the layers!
-    //lsys.addRule('T', "F",                     0.05f); // Stop growing (top of tree)
+    // ----------------------------
+    // TRUNK / CROWN ZONES
+    // ----------------------------
+    // Lower crown R: fewer branches, more outward pitch (^^)
+    lsys.addRule('R', "F[^^C][^^C][^^C][^^C][^^C][^^C]FR", 0.42f);              // continue lower crown
+    lsys.addRule('R', "F[^^C][^^C][^^C][^^C][^^C][^^C]FS", 0.08f);         // transition to mid crown
+    lsys.addRule('R', "[^^C][^^C][^^C][^^C][^^C][^^C]FR", 0.42f);              // continue lower crown
+    lsys.addRule('R', "FF[^^C][^^C][^^C][^^C][^^C][^^C]FS", 0.08f);         // transition to mid crown
 
-    // ---- PRIMARY BRANCH (scaffold) ----
-    // Mostly extends, sometimes emits secondary twigs.
-    lsys.addRule('B', "FB",                1.00f);  // extend 
-    lsys.addRule('B', "FFB",               0.35f);  // occasional longer run 0.35
-    lsys.addRule('B', "F[+b]B",            0.45f);  // twig 0.28
-    lsys.addRule('B', "F[-b]B",            0.45f);  // twig
-    lsys.addRule('B', "F[+b][-b]B",        1.20f);  // small tuft 0.18
-    lsys.addRule('B', "F[+b][-b][+b][-b]B",        1.20f);  // small tuft 0.18
-    lsys.addRule('B', "F",                0.45f);  // stop extending0.25
-    //lsys.addRule('B', "",                  0.10f);  // die off (rare)0.10
+    // Mid crown S: densest + longest scaffolds (rounded silhouette)
+    lsys.addRule('S', "F[^^B][^^B][^^B][^^B][^^B]FS", 0.70f);   // continue mid crown
+    lsys.addRule('S', "F[^^B][^^B][^^B][^^B][^^B][^^B]FS", 0.25f);   // transition to upper crown
+    lsys.addRule('S', "F[^^B][^^B][^^B][^^B][^^B]Fs", 0.05f);   // transition to upper crown
 
-   /* lsys.addRule('B', "FFB",                1.00f);  // extend 
-    lsys.addRule('B', "FFFB",               0.35f);  // occasional longer run 0.35
-    lsys.addRule('B', "F[&&b]B",            0.45f);  // twig 0.28
-    lsys.addRule('B', "F[^^b]B",            0.45f);  // twig
-    lsys.addRule('B', "F[&&b][^^b]B",        1.20f);  // small tuft 0.18
-    lsys.addRule('B', "F[&&b][^^b][&&b][^^b]B",        1.20f);  // small tuft 0.18
-    lsys.addRule('B', "F",                0.45f);  // stop extending0.25
-    //lsys.addRule('B', "",                  0.10f);  // die off (rare)0.10*/
+    // Mid crown S: densest + longest scaffolds (rounded silhouette)
+    lsys.addRule('s', "F[^^B][^^B][^^B][^^B][^^B]Fs", 0.70f);   // continue mid crown
+    lsys.addRule('s', "F[^^B][^^B][^^B][^^B][^^B][^^B]Fs", 0.25f);   // transition to upper crown
+    lsys.addRule('s', "F[^^B][^^B][^^B][^^B][^^B]FT", 0.05f);   // transition to upper crown
 
-    // ---- SECONDARY TWIGS ----
-   lsys.addRule('b', "b[+b][-b]b",        1.00f);
-    lsys.addRule('b', "b[+b]b",            0.50f);
-    lsys.addRule('b', "b[-b]b",            0.50f);
-   lsys.addRule('b', "F",                 0.40f);
+    // Upper crown T: fewer + shorter scaffolds, less outward pitch (^ instead of ^^)
+    lsys.addRule('T', "FF[^D][^D]FT", 0.80f);                // continue upper crown
+    lsys.addRule('T', "FF[^D]FU", 0.20f);                    // transition to top
+
+    // Top leader U: mostly trunk, tiny branches sometimes, then stop
+    lsys.addRule('U', "FU", 0.70f);
+    lsys.addRule('U', "F", 0.30f);
+
+    // ----------------------------
+    // SCAFFOLDS
+    // ----------------------------
+    // Medium scaffold (lower crown)
+    lsys.addRule('C', "FC", 0.90f);
+    lsys.addRule('C', "FFC", 0.35f);
+    lsys.addRule('C', "F[+b]C", 0.40f);
+    lsys.addRule('C', "F[-b]C", 0.40f);
+    lsys.addRule('C', "F[+b][-b]C", 0.25f);
+    lsys.addRule('C', "FE", 0.45f); // terminate into tuft
+
+    // Long scaffold (mid crown)
+    lsys.addRule('B', "FB", 1.00f);
+    lsys.addRule('B', "FFB", 0.45f);
+    lsys.addRule('B', "F[+b]B", 0.55f);
+    lsys.addRule('B', "F[-b]B", 0.55f);
+    lsys.addRule('B', "F[+b][-b]B", 0.35f);
+    lsys.addRule('B', "F[\\b][/b]B", 0.25f); // roll twigs around branch axis
+    lsys.addRule('B', "FE", 0.50f);          // terminate into tuft
+
+    // Short scaffold (upper crown)
+    lsys.addRule('D', "FD", 0.75f);
+    lsys.addRule('D', "F[+b]D", 0.40f);
+    lsys.addRule('D', "F[-b]D", 0.40f);
+    lsys.addRule('D', "FE", 0.55f);
+    lsys.addRule('D', "F", 0.30f);
+
+    // ----------------------------
+    // TERMINAL TUFT
+    // ----------------------------
+    lsys.addRule('E', "F[+b][-b][\\b][/b]", 1.00f);
+
+    // ----------------------------
+    // TWIGS (must draw often -> lots of 'F')
+    // ----------------------------
+    lsys.addRule('b', "FF", 0.55f);
+    lsys.addRule('b', "F[+b][-b]", 0.40f);
+    lsys.addRule('b', "FF[+b]F[-b]", 0.25f);
+    lsys.addRule('b', "F[+b]b", 0.20f);
+    lsys.addRule('b', "F[-b]b", 0.20f);
+    lsys.addRule('b', "", 0.10f);
 }
-
 
 
 std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
@@ -587,6 +622,29 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
 
                 radiusDecayThisStep = glm::mix(decayNearBase, decayNearTop, s);
             }
+
+            // --- NEW: scaffold-only taper curve ---
+            // A "scaffold" in your interpreter is a first-level branch off the trunk,
+            // which corresponds to being inside exactly one '[' ... ']' nesting level.
+            if (p.enableScaffoldTaperCurve && stack.size() == 1) {
+
+                // t goes 0 -> 1 as we move along the scaffold (depth increments per 'F')
+                // taperSteps controls how quickly the taper ramps up along the scaffold.
+                const float taperSteps = 12.0f;
+
+                // Smaller topMult = thinner tips.
+                const float topMult = 0.84f;
+
+                // Lower power = taper starts earlier.
+                const float power = 1.15f;
+
+                float tt = glm::clamp(float(cur.depth) / taperSteps, 0.0f, 1.0f);
+                float s = std::pow(tt, power);
+
+                float decayNearTip = p.radiusDecayF * topMult;
+                radiusDecayThisStep = glm::mix(p.radiusDecayF, decayNearTip, s);
+            }
+
 
             // Apply decay + jitter
             float rTop = (cur.radius * radiusDecayThisStep) * jitterFrac(p.radiusJitterFrac);
