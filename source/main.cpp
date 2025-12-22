@@ -177,6 +177,8 @@ int main(int argc, char** argv) {
     params.preset = TreePreset::Deciduous;
 
     bool solidMode = false; // NEW: solid bark for screenshots
+    bool envMode = false; // NEW: enable HDRI environment background (Part 1)
+
     bool DeciduousMode = true;
     
     // Iteration variables
@@ -197,6 +199,7 @@ int main(int argc, char** argv) {
                 << "  -d, --deciduous     Set tree type to Deciduous (default)\n"
                 << "  -c, --conifer       Set tree type to Conifer/Pine\n"
                 << "  -s, --solid         Enable solid bark mode (for screenshots)\n"
+                << "  -e, --environment   Enable HDRI background environment\n"
                 << "  -i <number>         Set iteration count (default: 1)\n"
                 << "  -seed <number>      Set generation seed (default: 2025)\n"
                 << "  -h, --help          Show this help message\n\n"
@@ -207,6 +210,9 @@ int main(int argc, char** argv) {
         }
         else if (arg == "--solid" || arg == "solid" || arg == "--flat" || arg == "flat" || arg == "-s") {
             solidMode = true;
+        }
+        else if (arg == "-e" || arg == "--environment") {
+            envMode = true;
         }
         else if (arg == "deciduous" || arg == "--deciduous" || arg == "-d") {
             params.preset = TreePreset::Deciduous;
@@ -267,10 +273,50 @@ int main(int argc, char** argv) {
     if (solidMode) {
         std::cout << "SOLID MODE enabled (light gray bark, no texture detail)\n";
     }
+    if (envMode) {
+        std::cout << "ENVIRONMENT MODE enabled (HDRI background)\n";
+    }
 
 
     fs::path root = FindProjectRoot();
     fs::path texRoot = root / "assets" / "textures";
+
+    // ---------------------------
+// Environment HDRI (Part 1)
+// ---------------------------
+    fs::path hdriPath;
+    GLuint texHDRI = 0;
+
+    if (envMode) {
+        fs::path hdriRoot = root / "assets" / "HDRIs";
+        if (params.preset == TreePreset::Conifer) {
+            hdriPath = hdriRoot / "conifer" / "autumn_park_1k.png";
+        }
+        else {
+            hdriPath = hdriRoot / "deciduous" / "belfast_sunset_1k.png";
+        }
+
+        std::cout << "Loading HDRI from:\n" << hdriPath << "\n";
+        texHDRI = LoadTexture2D(hdriPath, true); // sRGB for PNG
+
+        if (texHDRI) {
+            // For lat-long env maps: wrap S, clamp T is usually best
+
+            glBindTexture(GL_TEXTURE_2D, texHDRI);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glBindTexture(GL_TEXTURE_2D, 0);
+
+        }
+        else {
+            std::cerr << "Warning: HDRI failed to load, environment will be disabled.\n";
+            envMode = false;
+        }
+    }
 
     fs::path diffPath, norPath, roughPath;
 
@@ -701,6 +747,113 @@ int main(int argc, char** argv) {
     glUniform1i(uNormalTexLoc, 1);
     glUniform1i(uRoughTexLoc, 2);
 
+    // ---------------------------
+// Sky background (HDRI) (Part 1)
+// ---------------------------
+    GLuint skyProg = 0;
+    GLuint skyVAO = 0;
+
+    GLint uSkyTexLoc = -1;
+    GLint uSkyInvProjLoc = -1;
+    GLint uSkyInvViewRotLoc = -1;
+    GLint uSkyWorldRotLoc = -1;
+    GLint uSkyResLoc = -1;
+    GLint uSkyExposureLoc = -1;
+    GLint uSkyGammaLoc = -1;
+    GLint uSkyFlipVLoc = -1;
+
+    if (envMode && texHDRI) {
+        const char* skyVsSrc = R"GLSL(
+        #version 330 core
+        void main() {
+            vec2 pos;
+            if (gl_VertexID == 0) pos = vec2(-1.0, -1.0);
+            else if (gl_VertexID == 1) pos = vec2( 3.0, -1.0);
+            else pos = vec2(-1.0,  3.0);
+            gl_Position = vec4(pos, 0.0, 1.0);
+        }
+    )GLSL";
+
+        const char* skyFsSrc = R"GLSL(
+        #version 330 core
+        out vec4 FragColor;
+
+        uniform sampler2D uHDRI;
+        uniform mat4  uInvProj;
+        uniform mat3  uInvViewRot;
+        uniform mat3  uWorldRot;
+        uniform vec2  uResolution;
+
+        uniform float uExposure;
+        uniform float uGamma;
+        uniform bool  uFlipV;
+
+        const float PI = 3.14159265359;
+
+        vec2 DirToEquirectUV(vec3 d) {
+            d = normalize(d);
+            float phi   = atan(d.z, d.x);                 // -PI..PI
+            float theta = asin(clamp(d.y, -1.0, 1.0));    // -PI/2..PI/2
+            vec2 uv;
+            uv.x = phi / (2.0 * PI) + 0.5;
+            uv.y = theta / PI + 0.5;
+            return uv;
+        }
+
+        void main() {
+            vec2 uv  = gl_FragCoord.xy / uResolution;
+            vec2 ndc = uv * 2.0 - 1.0;
+
+            // Reconstruct view-space ray
+            vec4 clip = vec4(ndc, 1.0, 1.0);
+            vec4 view = uInvProj * clip;
+            vec3 dirVS = normalize(view.xyz / max(view.w, 1e-6));
+
+            // To world direction (camera rotation only)
+            vec3 dirWS = normalize(uInvViewRot * dirVS);
+
+            // Rotate environment with the tree/world
+            dirWS = normalize(transpose(uWorldRot) * dirWS); // inverse for pure rotation matrices
+
+            vec2 envUV = DirToEquirectUV(dirWS);
+            envUV.x = fract(envUV.x + 1e-4);              // wrap cleanly
+            envUV.y = clamp(envUV.y, 1e-4, 1.0 - 1e-4);   // avoid pole edge
+            
+            if (uFlipV) envUV.y = 1.0 - envUV.y;
+
+            vec3 col = texture(uHDRI, envUV).rgb;
+
+            // Make LDR PNG feel less dull
+            col *= uExposure;
+            col = col / (col + vec3(1.0));           // mild Reinhard
+            col = pow(col, vec3(1.0 / uGamma));      // gamma
+
+            FragColor = vec4(col, 1.0);
+        }
+    )GLSL";
+
+        GLuint svs = CompileShader(GL_VERTEX_SHADER, skyVsSrc);
+        GLuint sfs = CompileShader(GL_FRAGMENT_SHADER, skyFsSrc);
+        skyProg = LinkProgram(svs, sfs);
+        glDeleteShader(svs);
+        glDeleteShader(sfs);
+
+        uSkyTexLoc = glGetUniformLocation(skyProg, "uHDRI");
+        uSkyInvProjLoc = glGetUniformLocation(skyProg, "uInvProj");
+        uSkyInvViewRotLoc = glGetUniformLocation(skyProg, "uInvViewRot");
+        uSkyWorldRotLoc = glGetUniformLocation(skyProg, "uWorldRot");
+        uSkyResLoc = glGetUniformLocation(skyProg, "uResolution");
+        uSkyExposureLoc = glGetUniformLocation(skyProg, "uExposure");
+        uSkyGammaLoc = glGetUniformLocation(skyProg, "uGamma");
+        uSkyFlipVLoc = glGetUniformLocation(skyProg, "uFlipV");
+
+        glGenVertexArrays(1, &skyVAO);
+
+        glUseProgram(skyProg);
+        glUniform1i(uSkyTexLoc, 3); // HDRI bound on texture unit 3
+        glUseProgram(0);
+    }
+
     glm::vec3 camPos(0.0f, 8.0f, 32.0f);
     glm::vec3 camTarget(0.0f, 8.0f, 0.0f);
 
@@ -721,6 +874,44 @@ int main(int argc, char** argv) {
         float aspect = (float)gWidth / (float)gHeight;
         glm::mat4 proj = glm::perspective(glm::radians(45.0f), aspect, 0.1f, 200.0f);
         glm::mat4 viewProj = proj * view;
+
+        // --- Sky pass (HDRI) ---
+        if (envMode && texHDRI && skyProg && skyVAO) {
+            glm::mat4 invProj = glm::inverse(proj);
+            glm::mat3 invViewRot = glm::transpose(glm::mat3(view)); // inverse of view rotation
+            glm::mat3 worldRot = glm::mat3(model);                // same rotation as the tree
+
+            glDepthMask(GL_FALSE);
+            glDisable(GL_DEPTH_TEST);
+
+            glUseProgram(skyProg);
+            glUniformMatrix4fv(uSkyInvProjLoc, 1, GL_FALSE, &invProj[0][0]);
+            glUniformMatrix3fv(uSkyInvViewRotLoc, 1, GL_FALSE, &invViewRot[0][0]);
+            glUniformMatrix3fv(uSkyWorldRotLoc, 1, GL_FALSE, &worldRot[0][0]);
+            glUniform2f(uSkyResLoc, (float)gWidth, (float)gHeight);
+
+            // Tune these later; just start here
+            float exposure = (params.preset == TreePreset::Conifer) ? 1.25f : 1.45f;
+            glUniform1f(uSkyExposureLoc, exposure);
+            glUniform1f(uSkyGammaLoc, 2.2f);
+
+            // You said you already flipped it correctly, so keep this OFF by default.
+            // Turn to 1 if it becomes inverted again.
+            glUniform1i(uSkyFlipVLoc, 0);
+
+            glActiveTexture(GL_TEXTURE3);
+            glBindTexture(GL_TEXTURE_2D, texHDRI);
+
+            glBindVertexArray(skyVAO);
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+            glBindVertexArray(0);
+
+            glBindTexture(GL_TEXTURE_2D, 0);
+            glUseProgram(0);
+
+            glEnable(GL_DEPTH_TEST);
+            glDepthMask(GL_TRUE);
+        }
 
         glUseProgram(prog);
         glUniformMatrix4fv(uModelLoc, 1, GL_FALSE, &model[0][0]);
@@ -773,6 +964,10 @@ int main(int argc, char** argv) {
     glDeleteProgram(prog);
     glDeleteBuffers(1, &vbo);
     glDeleteVertexArrays(1, &vao);
+
+    if (skyProg) glDeleteProgram(skyProg);
+    if (skyVAO)  glDeleteVertexArrays(1, &skyVAO);
+    if (texHDRI) glDeleteTextures(1, &texHDRI);
 
     glDeleteTextures(1, &texAlbedo);
     glDeleteTextures(1, &texNormal);
