@@ -94,6 +94,128 @@ static GLuint Make1x1TextureRGBA(unsigned char r, unsigned char g, unsigned char
     return tex;
 }
 
+// ---------------------------
+// Hill mesh generation (Part 2)
+// Uses VertexPN = { pos, normal, uv, tangent } like your tree.
+// Generates a gentle mound + subtle noise, centered at (0, baseY, 0).
+// ---------------------------
+static float HillHeightFn(float x, float z, float baseY)
+{
+    // Broad mound (Gaussian-ish)
+    float r2 = x * x + z * z;
+    float moundHeight = 0.55f;
+    float sigma = 10.0f; // bigger = wider hill
+    float mound = moundHeight * std::exp(-r2 / (2.0f * sigma * sigma));
+
+    // Subtle "old videogame" noise
+    float noiseAmp = 0.10f;
+    float n =
+        0.60f * std::sin(0.35f * x + 0.15f * z) +
+        0.40f * std::cos(0.25f * z - 0.10f * x) +
+        0.25f * std::sin(0.18f * (x + z));
+
+    return baseY + mound + noiseAmp * n;
+}
+
+static std::vector<VertexPN> BuildHillVertices(
+    float baseY,
+    float halfSize,
+    int   gridN,
+    float uvWorldU,
+    float uvWorldV)
+{
+    gridN = std::max(4, gridN);
+    uvWorldU = std::max(1e-6f, uvWorldU);
+    uvWorldV = std::max(1e-6f, uvWorldV);
+
+    const int N = gridN;
+    const float size = 2.0f * halfSize;
+    const float dx = size / float(N - 1);
+    const float dz = size / float(N - 1);
+
+    auto idx = [&](int i, int j) { return j * N + i; };
+
+    std::vector<float> H(N * N, 0.0f);
+    for (int j = 0; j < N; ++j) {
+        float z = -halfSize + j * dz;
+        for (int i = 0; i < N; ++i) {
+            float x = -halfSize + i * dx;
+            H[idx(i, j)] = HillHeightFn(x, z, baseY);
+        }
+    }
+
+    std::vector<glm::vec3> P(N * N);
+    std::vector<glm::vec3> Nrm(N * N);
+    std::vector<glm::vec4> Tan(N * N);
+    std::vector<glm::vec2> UV(N * N);
+
+    for (int j = 0; j < N; ++j) {
+        float z = -halfSize + j * dz;
+        for (int i = 0; i < N; ++i) {
+            float x = -halfSize + i * dx;
+
+            float hC = H[idx(i, j)];
+            int iL = std::max(0, i - 1), iR = std::min(N - 1, i + 1);
+            int jD = std::max(0, j - 1), jU = std::min(N - 1, j + 1);
+
+            float hL = H[idx(iL, j)];
+            float hR = H[idx(iR, j)];
+            float hD = H[idx(i, jD)];
+            float hU = H[idx(i, jU)];
+
+            float dhdx = (hR - hL) / (float(iR - iL) * dx);
+            float dhdz = (hU - hD) / (float(jU - jD) * dz);
+
+            glm::vec3 pos(x, hC, z);
+
+            // Normal from heightfield gradients
+            glm::vec3 n = glm::normalize(glm::vec3(-dhdx, 1.0f, -dhdz));
+
+            // Tangent along +X direction (dP/dx)
+            glm::vec3 t = glm::normalize(glm::vec3(1.0f, dhdx, 0.0f));
+
+            // Bitangent along +Z direction (dP/dz)
+            glm::vec3 b = glm::normalize(glm::vec3(0.0f, dhdz, 1.0f));
+
+            // Orthonormalize tangent to normal and compute sign
+            t = glm::normalize(t - n * glm::dot(n, t));
+            float sign = (glm::dot(glm::cross(n, t), b) < 0.0f) ? -1.0f : 1.0f;
+
+            // UV in world meters
+            glm::vec2 uv(x / uvWorldU, z / uvWorldV);
+
+            P[idx(i, j)]   = pos;
+            Nrm[idx(i, j)] = n;
+            Tan[idx(i, j)] = glm::vec4(t, sign);
+            UV[idx(i, j)]  = uv;
+        }
+    }
+
+    // Build triangle list (no EBO) so it matches your tree draw style
+    std::vector<VertexPN> out;
+    out.reserve((N - 1) * (N - 1) * 6);
+
+    auto push = [&](int i, int j) {
+        int k = idx(i, j);
+        out.push_back({ P[k], Nrm[k], UV[k], Tan[k] });
+    };
+
+    for (int j = 0; j < N - 1; ++j) {
+        for (int i = 0; i < N - 1; ++i) {
+            // Quad corners: (i,j)=00, (i+1,j)=10, (i+1,j+1)=11, (i,j+1)=01
+            push(i,     j);
+            push(i + 1, j);
+            push(i + 1, j + 1);
+
+            push(i,     j);
+            push(i + 1, j + 1);
+            push(i,     j + 1);
+        }
+    }
+
+    return out;
+}
+
 static GLuint LoadTexture2D(const fs::path& path, bool srgb)
 {
     int w = 0, h = 0, comp = 0;
@@ -277,13 +399,51 @@ int main(int argc, char** argv) {
         std::cout << "ENVIRONMENT MODE enabled (HDRI background)\n";
     }
 
-
     fs::path root = FindProjectRoot();
     fs::path texRoot = root / "assets" / "textures";
 
     // ---------------------------
-// Environment HDRI (Part 1)
-// ---------------------------
+    // Ground textures (Part 2)
+    // ---------------------------
+    GLuint texGroundAlbedo = 0;
+    GLuint texGroundNormal = 0;
+    GLuint texGroundRough = 0;
+
+    if (envMode) {
+        fs::path groundRoot = root / "assets" / "ground";
+        fs::path gset = (params.preset == TreePreset::Conifer)
+            ? (groundRoot / "conifer")
+            : (groundRoot / "deciduous");
+
+        fs::path gDiff, gNor, gRough;
+
+        if (params.preset == TreePreset::Conifer) {
+            gDiff = gset / "forrest_ground_01_diff_1k.png";
+            gNor = gset / "forrest_ground_01_nor_gl_1k.png";
+            gRough = gset / "forrest_ground_01_rough_1k.png";
+        }
+        else {
+            gDiff = gset / "red_laterite_soil_stones_diff_1k.png";
+            gNor = gset / "red_laterite_soil_stones_nor_gl_1k.png";
+            gRough = gset / "red_laterite_soil_stones_rough_1k.png";
+        }
+
+        std::cout << "Loading ground textures from:\n"
+            << gDiff << "\n" << gNor << "\n" << gRough << "\n";
+
+        texGroundAlbedo = LoadTexture2D(gDiff, true);
+        texGroundNormal = LoadTexture2D(gNor, false);
+        texGroundRough = LoadTexture2D(gRough, false);
+
+        if (!texGroundAlbedo || !texGroundNormal || !texGroundRough) {
+            std::cerr << "Warning: ground textures failed to load. Disabling env ground.\n";
+            texGroundAlbedo = texGroundNormal = texGroundRough = 0;
+        }
+    }
+
+    // ---------------------------
+    // Environment HDRI (Part 1)
+    // ---------------------------
     fs::path hdriPath;
     GLuint texHDRI = 0;
 
@@ -553,6 +713,10 @@ int main(int argc, char** argv) {
     glGenVertexArrays(1, &vao);
     glGenBuffers(1, &vbo);
 
+    // ---- Hill GPU handles (Part 2) ----
+    GLuint hillVAO = 0, hillVBO = 0;
+    GLsizei hillVertCount = 0;
+
     glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER,
@@ -573,6 +737,54 @@ int main(int argc, char** argv) {
     glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(VertexPN), (void*)offsetof(VertexPN, tangent));
 
     glBindVertexArray(0);
+
+    // ---------------------------
+// Hill mesh (Part 2) GPU upload
+// ---------------------------
+    if (envMode) {
+        // NOTE: This assumes you already loaded:
+        // GLuint texGroundAlbedo, texGroundNormal, texGroundRough;
+        // and you already implemented BuildHillVertices(...) above main().
+
+        // Put ground near the tree base (your tree vertices already include baseTranslation)
+        float baseY = params.baseTranslation.y - 0.20f;
+
+        // Size/resolution (tweak later)
+        float halfSize = 18.0f;
+        int   gridN = 90;
+
+        // UV repeat in world meters (bigger => less tiling)
+        float uvWorldU = (params.preset == TreePreset::Conifer) ? 3.5f : 4.5f;
+        float uvWorldV = (params.preset == TreePreset::Conifer) ? 3.5f : 4.5f;
+
+        std::vector<VertexPN> hillVerts = BuildHillVertices(baseY, halfSize, gridN, uvWorldU, uvWorldV);
+        hillVertCount = (GLsizei)hillVerts.size();
+
+        glGenVertexArrays(1, &hillVAO);
+        glGenBuffers(1, &hillVBO);
+
+        glBindVertexArray(hillVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, hillVBO);
+        glBufferData(GL_ARRAY_BUFFER,
+            (GLsizeiptr)(hillVerts.size() * sizeof(VertexPN)),
+            hillVerts.data(),
+            GL_STATIC_DRAW);
+
+        // Same attribute layout as your tree:
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(VertexPN), (void*)offsetof(VertexPN, pos));
+
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(VertexPN), (void*)offsetof(VertexPN, normal));
+
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(VertexPN), (void*)offsetof(VertexPN, uv));
+
+        glEnableVertexAttribArray(3);
+        glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(VertexPN), (void*)offsetof(VertexPN, tangent));
+
+        glBindVertexArray(0);
+    }
 
     // ---- Shaders ----
     const char* vsSrc = R"GLSL(
@@ -911,6 +1123,43 @@ int main(int argc, char** argv) {
 
             glEnable(GL_DEPTH_TEST);
             glDepthMask(GL_TRUE);
+        }
+
+        // ---------------------------
+// Draw hill (Part 2)
+// ---------------------------
+        if (envMode && hillVAO && hillVertCount > 0) {
+            glUseProgram(prog);
+
+            // Rotate hill with tree so environment matches
+            glm::mat4 hillModel = model;
+
+            glUniformMatrix4fv(uModelLoc, 1, GL_FALSE, &hillModel[0][0]);
+            glUniformMatrix4fv(uViewProjLoc, 1, GL_FALSE, &viewProj[0][0]);
+
+            // Bind ground textures (assumes these exist + were loaded earlier in main.cpp)
+            glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, texGroundAlbedo);
+            glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, texGroundNormal);
+            glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, texGroundRough);
+
+            // Material tuning for ground
+            glUniform3f(uBaseColorLoc, 1.0f, 1.0f, 1.0f);
+            glUniform3f(uCamPosLoc, camPos.x, camPos.y, camPos.z);
+
+            glUniform1f(uNormalStrLoc, 1.0f);
+            glUniform1f(uSpecPowerLoc, 48.0f);
+            glUniform1f(uSpecStrLoc, 0.12f);
+            glUniform1i(uFlipNormalYLoc, 0);
+
+            // Use your existing shader params but make them subtle for ground
+            glUniform1f(glGetUniformLocation(prog, "uMacroFreq"), 0.06f);
+            glUniform1f(glGetUniformLocation(prog, "uMacroStrength"), 0.10f);
+            glUniform1f(glGetUniformLocation(prog, "uUVWarp"), 0.01f);
+            glUniform1f(glGetUniformLocation(prog, "uBarkTwist"), 0.0f);
+
+            glBindVertexArray(hillVAO);
+            glDrawArrays(GL_TRIANGLES, 0, hillVertCount);
+            glBindVertexArray(0);
         }
 
         glUseProgram(prog);
