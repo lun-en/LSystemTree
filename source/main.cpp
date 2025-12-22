@@ -750,12 +750,12 @@ int main(int argc, char** argv) {
         float baseY = params.baseTranslation.y - 0.20f;
 
         // Size/resolution (tweak later)
-        float halfSize = 18.0f;
-        int   gridN = 90;
+        float halfSize = 30.0f;   // bigger plane, we’ll hide edges with mask
+        int   gridN = 120;     // smoother mound
 
-        // UV repeat in world meters (bigger => less tiling)
-        float uvWorldU = (params.preset == TreePreset::Conifer) ? 3.5f : 4.5f;
-        float uvWorldV = (params.preset == TreePreset::Conifer) ? 3.5f : 4.5f;
+        // UVBigger numbers = fewer repeats (less tiling)
+        float uvWorldU = (params.preset == TreePreset::Conifer) ? 12.0f : 14.0f;
+        float uvWorldV = (params.preset == TreePreset::Conifer) ? 12.0f : 14.0f;
 
         std::vector<VertexPN> hillVerts = BuildHillVertices(baseY, halfSize, gridN, uvWorldU, uvWorldV);
         hillVertCount = (GLsizei)hillVerts.size();
@@ -852,6 +852,12 @@ int main(int argc, char** argv) {
         uniform float uMacroStrength;   // e.g. 0.20
         uniform float uUVWarp;          // e.g. 0.02
         uniform float uBarkTwist;       // e.g. 0.08 (optional)
+
+        uniform bool  uUseAltTiling;     // ground: ON, tree: OFF
+        uniform float uAltTilingMix;     // 0..1
+        uniform bool  uUseGroundMask;    // ground: ON, tree: OFF
+        uniform float uGroundRadius;     // world units
+        uniform float uGroundFade;       // world units
         
         out vec4 FragColor;
 
@@ -885,47 +891,78 @@ int main(int argc, char** argv) {
         }
     
         void main() {
-
+        
             vec2 uv = vUV;
-
-            // optional subtle spiral twist
+        
+            // optional subtle spiral twist (tree bark)
             uv.x += uv.y * uBarkTwist;
-            
-            // macro noise from world pos
+        
+            // macro noise from world pos (already in your shader)
             float m  = noise3(vWorldPos * uMacroFreq);
             float m2 = noise3((vWorldPos + vec3(17.0, 5.0, 11.0)) * uMacroFreq);
             vec2 warp = vec2(m, m2) - 0.5;
             uv += warp * uUVWarp;
-
-            vec3 albedo = texture(uAlbedoTex, uv).rgb * uBaseColor;
-    
-            // Tangent-space normal map
-            vec3 nTS    = texture(uNormalTex, uv).xyz * 2.0 - 1.0;
-
-            if (uFlipNormalY) nTS.y = -nTS.y;
+        
+            // --- Anti-tiling second sample (use for ground) ---
+            vec2 uv2 = uv;
+            float blend = 0.0;
+            if (uUseAltTiling) {
+                float a = 0.73; // radians (~42 deg)
+                mat2 R = mat2(cos(a), -sin(a),
+                              sin(a),  cos(a));
+                uv2 = R * (uv * 1.37 + vec2(0.123, 0.456));
+        
+                // Stable blend mask from world-space noise
+                blend = smoothstep(0.25, 0.75, noise3(vWorldPos * 0.20));
+                blend *= clamp(uAltTilingMix, 0.0, 1.0);
+            }
+        
+            // Sample textures (blend two UV sets to break regular repeats)
+            vec3 alb1 = texture(uAlbedoTex, uv).rgb;
+            vec3 alb2 = texture(uAlbedoTex, uv2).rgb;
+            vec3 albedo = mix(alb1, alb2, blend) * uBaseColor;
+        
+            float rough1 = texture(uRoughTex, uv).r;
+            float rough2 = texture(uRoughTex, uv2).r;
+            float rough = mix(rough1, rough2, blend);
+        
+            vec3 n1 = texture(uNormalTex, uv).xyz  * 2.0 - 1.0;
+            vec3 n2 = texture(uNormalTex, uv2).xyz * 2.0 - 1.0;
+            if (uFlipNormalY) { n1.y = -n1.y; n2.y = -n2.y; }
+        
+            vec3 nTS = normalize(mix(n1, n2, blend));
             nTS.xy *= uNormalStrength;
             nTS = normalize(nTS);
-    
+        
             mat3 TBN = mat3(normalize(vT), normalize(vB), normalize(vN));
             vec3 N = normalize(TBN * nTS);
-    
+        
             vec3 L = normalize(uLightDir);
             float diff = max(dot(N, L), 0.0);
-    
+        
             vec3 V = normalize(uCamPos - vWorldPos);
             vec3 H = normalize(L + V);
-    
-            float rough = texture(uRoughTex,  uv).r;
-
+        
+            // Existing macro modulation
             float macro = mix(1.0 - uMacroStrength, 1.0 + uMacroStrength, m);
             albedo *= macro;
             rough = clamp(rough + (m - 0.5) * 0.35 * uMacroStrength, 0.0, 1.0);
-
+        
             float spec = pow(max(dot(N, H), 0.0), uSpecPower);
             spec *= uSpecStrength * (1.0 - rough);
-    
+        
             vec3 col = albedo * (uAmbient + diff) + vec3(spec);
-            FragColor = vec4(col, 1.0);
+        
+            // --- Circular ground mask (hide square plane edges) ---
+            float alpha = 1.0;
+            if (uUseGroundMask) {
+                float d = length(vWorldPos.xz); // center at origin
+                alpha = 1.0 - smoothstep(uGroundRadius, uGroundRadius + uGroundFade, d);
+                alpha = clamp(alpha, 0.0, 1.0);
+                col *= alpha; // makes edge blend cleaner
+            }
+        
+            FragColor = vec4(col, alpha);
         }
     )GLSL";
 
@@ -1126,9 +1163,15 @@ int main(int argc, char** argv) {
         }
 
         // ---------------------------
-// Draw hill (Part 2)
-// ---------------------------
+        // Draw hill (Part 2)
+        // ---------------------------
         if (envMode && hillVAO && hillVertCount > 0) {
+
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+            glDisable(GL_DEPTH_TEST); // hill is background; tree draws after it
+
             glUseProgram(prog);
 
             // Rotate hill with tree so environment matches
@@ -1152,14 +1195,26 @@ int main(int argc, char** argv) {
             glUniform1i(uFlipNormalYLoc, 0);
 
             // Use your existing shader params but make them subtle for ground
-            glUniform1f(glGetUniformLocation(prog, "uMacroFreq"), 0.06f);
-            glUniform1f(glGetUniformLocation(prog, "uMacroStrength"), 0.10f);
-            glUniform1f(glGetUniformLocation(prog, "uUVWarp"), 0.01f);
+            glUniform1f(glGetUniformLocation(prog, "uMacroFreq"), 0.03f);
+            glUniform1f(glGetUniformLocation(prog, "uMacroStrength"), 0.18f);
+            glUniform1f(glGetUniformLocation(prog, "uUVWarp"), 0.02f);
             glUniform1f(glGetUniformLocation(prog, "uBarkTwist"), 0.0f);
+
+            // Circular mask to hide square edges
+            glUniform1i(glGetUniformLocation(prog, "uUseGroundMask"), 1);
+            glUniform1f(glGetUniformLocation(prog, "uGroundRadius"), 14.0f);
+            glUniform1f(glGetUniformLocation(prog, "uGroundFade"), 6.0f);
+
+            // Anti-tiling blend (ground only)
+            glUniform1i(glGetUniformLocation(prog, "uUseAltTiling"), 1);
+            glUniform1f(glGetUniformLocation(prog, "uAltTilingMix"), 0.75f);
 
             glBindVertexArray(hillVAO);
             glDrawArrays(GL_TRIANGLES, 0, hillVertCount);
             glBindVertexArray(0);
+
+            glEnable(GL_DEPTH_TEST);
+            glDisable(GL_BLEND);
         }
 
         glUseProgram(prog);
@@ -1188,6 +1243,10 @@ int main(int argc, char** argv) {
         glUniform1f(glGetUniformLocation(prog, "uUVWarp"), 0.02f);
         glUniform1f(glGetUniformLocation(prog, "uBarkTwist"), 0.08f);
 
+        glUniform1i(glGetUniformLocation(prog, "uUseGroundMask"), 0);
+        glUniform1i(glGetUniformLocation(prog, "uUseAltTiling"), 0);
+        glUniform1f(glGetUniformLocation(prog, "uAltTilingMix"), 0.0f);
+
         glUniform1f(uNormalStrLoc, 1.0f);
         glUniform1f(uSpecPowerLoc, 32.0f);
         glUniform1f(uSpecStrLoc, solidMode ? 0.15f : 0.35f);
@@ -1197,7 +1256,7 @@ int main(int argc, char** argv) {
         glUniform3f(uAmbientLoc, 0.75f, 0.75f, 0.75f);
 
         if (solidMode) glUniform3f(uAmbientLoc, 0.50f, 0.50f, 0.50f); // light gray
-        else           glUniform3f(uAmbientLoc, 0.75f, 0.75f, 0.75f);
+        else           glUniform3f(uAmbientLoc, 0.65f, 0.65f, 0.65f);
 
         glm::vec3 lightDir = glm::normalize(glm::vec3(0.4f, 1.0f, 0.3f));
         glUniform3f(uLightDirLoc, lightDir.x, lightDir.y, lightDir.z);
