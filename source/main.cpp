@@ -858,6 +858,7 @@ int main(int argc, char** argv) {
         uniform bool  uUseGroundMask;    // ground: ON, tree: OFF
         uniform float uGroundRadius;     // world units
         uniform float uGroundFade;       // world units
+        uniform float uGroundCutoff;     // 0 = disabled, >0 = discard alpha below cutoff (for depth prepass)   
         
         out vec4 FragColor;
 
@@ -959,9 +960,13 @@ int main(int argc, char** argv) {
                 float d = length(vWorldPos.xz); // center at origin
                 alpha = 1.0 - smoothstep(uGroundRadius, uGroundRadius + uGroundFade, d);
                 alpha = clamp(alpha, 0.0, 1.0);
-                col *= alpha; // makes edge blend cleaner
+            
+                // Depth prepass uses this to keep only the opaque center
+                if (uGroundCutoff > 0.0 && alpha < uGroundCutoff)
+                    discard;
             }
-        
+            
+            // STRAIGHT alpha output (no premultiply) for standard blending
             FragColor = vec4(col, alpha);
         }
     )GLSL";
@@ -997,8 +1002,8 @@ int main(int argc, char** argv) {
     glUniform1i(uRoughTexLoc, 2);
 
     // ---------------------------
-// Sky background (HDRI) (Part 1)
-// ---------------------------
+    // Sky background (HDRI) (Part 1)
+    // ---------------------------
     GLuint skyProg = 0;
     GLuint skyVAO = 0;
 
@@ -1163,24 +1168,20 @@ int main(int argc, char** argv) {
         }
 
         // ---------------------------
-        // Draw hill (Part 2)
+        // Draw hill (Part 2): two-pass
+        //   Pass A: depth-only cutout (clips tree)
+        //   Pass B: blended color (soft edge), no depth writes
         // ---------------------------
         if (envMode && hillVAO && hillVertCount > 0) {
-
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-            glDisable(GL_DEPTH_TEST); // hill is background; tree draws after it
 
             glUseProgram(prog);
 
             // Rotate hill with tree so environment matches
             glm::mat4 hillModel = model;
-
             glUniformMatrix4fv(uModelLoc, 1, GL_FALSE, &hillModel[0][0]);
             glUniformMatrix4fv(uViewProjLoc, 1, GL_FALSE, &viewProj[0][0]);
 
-            // Bind ground textures (assumes these exist + were loaded earlier in main.cpp)
+            // Bind ground textures
             glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, texGroundAlbedo);
             glActiveTexture(GL_TEXTURE1); glBindTexture(GL_TEXTURE_2D, texGroundNormal);
             glActiveTexture(GL_TEXTURE2); glBindTexture(GL_TEXTURE_2D, texGroundRough);
@@ -1194,27 +1195,54 @@ int main(int argc, char** argv) {
             glUniform1f(uSpecStrLoc, 0.12f);
             glUniform1i(uFlipNormalYLoc, 0);
 
-            // Use your existing shader params but make them subtle for ground
+            // Subtle ground noise
             glUniform1f(glGetUniformLocation(prog, "uMacroFreq"), 0.03f);
             glUniform1f(glGetUniformLocation(prog, "uMacroStrength"), 0.18f);
             glUniform1f(glGetUniformLocation(prog, "uUVWarp"), 0.02f);
             glUniform1f(glGetUniformLocation(prog, "uBarkTwist"), 0.0f);
 
-            // Circular mask to hide square edges
-            glUniform1i(glGetUniformLocation(prog, "uUseGroundMask"), 1);
-            glUniform1f(glGetUniformLocation(prog, "uGroundRadius"), 14.0f);
-            glUniform1f(glGetUniformLocation(prog, "uGroundFade"), 6.0f);
+            // Circular mask params (shared by both passes)
+            GLint locUseGroundMask = glGetUniformLocation(prog, "uUseGroundMask");
+            GLint locGroundRadius = glGetUniformLocation(prog, "uGroundRadius");
+            GLint locGroundFade = glGetUniformLocation(prog, "uGroundFade");
+            GLint locGroundCutoff = glGetUniformLocation(prog, "uGroundCutoff");
 
-            // Anti-tiling blend (ground only)
+            glUniform1i(locUseGroundMask, 1);
+            glUniform1f(locGroundRadius, 14.0f);
+            glUniform1f(locGroundFade, 6.0f);
+
+            // Anti-tiling (ground only)
             glUniform1i(glGetUniformLocation(prog, "uUseAltTiling"), 1);
             glUniform1f(glGetUniformLocation(prog, "uAltTilingMix"), 0.75f);
 
             glBindVertexArray(hillVAO);
-            glDrawArrays(GL_TRIANGLES, 0, hillVertCount);
-            glBindVertexArray(0);
 
-            glEnable(GL_DEPTH_TEST);
+            // ---- Pass A: depth-only prepass (alpha cutout) ----
             glDisable(GL_BLEND);
+            glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+            glDepthMask(GL_TRUE);
+            glEnable(GL_DEPTH_TEST);
+            glDepthFunc(GL_LESS);
+
+            glUniform1f(locGroundCutoff, 0.99f); // keep only opaque center in depth
+            glDrawArrays(GL_TRIANGLES, 0, hillVertCount);
+
+            // ---- Pass B: color pass (blended fade), no depth writes ----
+            glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+            glDepthMask(GL_FALSE);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glDepthFunc(GL_LEQUAL); // allow drawing exactly on prepass depth
+
+            glUniform1f(locGroundCutoff, 0.0f); // disable discard; draw full fade
+            glDrawArrays(GL_TRIANGLES, 0, hillVertCount);
+
+            // Restore defaults for the tree
+            glDepthFunc(GL_LESS);
+            glDepthMask(GL_TRUE);
+            glDisable(GL_BLEND);
+
+            glBindVertexArray(0);
         }
 
         glUseProgram(prog);
