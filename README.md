@@ -11,7 +11,7 @@ Open **"x64 Native Tools Command Prompt for VS 2019"** in the project root (the 
 ```bat
 cmake -S . -B build -G "Visual Studio 16 2019" -A x64
 cmake --build build --config Debug
-./build/Debug/opengl-template.exe -h
+.\build\Debug\opengl-template.exe -h
 ```
 
 Notes:
