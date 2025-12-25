@@ -256,7 +256,7 @@ static void SetupDeciduousGrammar(LSystem& lsys, const TreeParams& p)
 
     //lsys.addRule('T', "", 0.005f);
 
-    // --- A: big branch bud (more lateral structure early, still controlled) ---
+    // --- A: big branch bud (scaffold) ---
     lsys.addRule('A', "a", 0.5f);
     lsys.addRule('A', "", 0.5f);
 
@@ -267,7 +267,7 @@ static void SetupDeciduousGrammar(LSystem& lsys, const TreeParams& p)
     lsys.addRule('a', "F[+Y][-Y]Fa", 0.22f);
     lsys.addRule('a', "FY", 0.18f);
 
-    // ---- PRIMARY BRANCH (scaffold) ----
+    // ---- SECONDARY BRANCH ----
     // Mostly extends, sometimes emits secondary twigs.
     lsys.addRule('Y', "FY",                1.00f);  // extend 
     lsys.addRule('Y', "FFY",               0.50f);  // occasional longer run 0.35
