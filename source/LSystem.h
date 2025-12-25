@@ -21,7 +21,7 @@ public:
 	void setAxiom(const std::string& axiom);
 
 	// Add a rule: `predecessor` -> `successor` with given probability (default 1.0)
-	// You can add multiple rules for the same predecessor (non-deterministic L-system)
+	// We can add multiple rules for the same predecessor (non-deterministic L-system)
 	void addRule(char predecessor, const std::string& successor, float probability = 1.0f);
 
 	// Remove all rules

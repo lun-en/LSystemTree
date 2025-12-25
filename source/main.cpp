@@ -96,7 +96,7 @@ static GLuint Make1x1TextureRGBA(unsigned char r, unsigned char g, unsigned char
 
 // ---------------------------
 // Hill mesh generation (Part 2)
-// Uses VertexPN = { pos, normal, uv, tangent } like your tree.
+// Uses VertexPN = { pos, normal, uv, tangent } like tree.
 // Generates a gentle mound + subtle noise, centered at (0, baseY, 0).
 // ---------------------------
 static float HillHeightFn(float x, float z, float baseY)
@@ -107,8 +107,8 @@ static float HillHeightFn(float x, float z, float baseY)
     float sigma = 10.0f; // bigger = wider hill
     float mound = moundHeight * std::exp(-r2 / (2.0f * sigma * sigma));
 
-    // Subtle "old videogame" noise
-    float noiseAmp = 0.10f;
+    // Subtle noise
+    float noiseAmp = 0.25f;
     float n =
         0.60f * std::sin(0.35f * x + 0.15f * z) +
         0.40f * std::cos(0.25f * z - 0.10f * x) +
@@ -191,7 +191,7 @@ static std::vector<VertexPN> BuildHillVertices(
         }
     }
 
-    // Build triangle list (no EBO) so it matches your tree draw style
+    // Build triangle list (no EBO) so it matches tree draw style
     std::vector<VertexPN> out;
     out.reserve((N - 1) * (N - 1) * 6);
 
@@ -289,7 +289,7 @@ int main(int argc, char** argv) {
     // ---- Build tree geometry (CPU) ----
     TreeParams params;
 
-    //NEW add the preset option
+    //add the preset option
     //choose preset from CLI argument
     // Usage to make each tree:
     //   opengl-template.exe deciduous
@@ -298,8 +298,8 @@ int main(int argc, char** argv) {
     //default preset for NOW
     params.preset = TreePreset::Deciduous;
 
-    bool solidMode = false; // NEW: solid bark for screenshots
-    bool envMode = false; // NEW: enable HDRI environment background (Part 1)
+    bool solidMode = false; // solid bark for screenshots
+    bool envMode = false; // enable HDRI environment background (Part 1)
 
     bool DeciduousMode = true;
     
@@ -450,10 +450,10 @@ int main(int argc, char** argv) {
     if (envMode) {
         fs::path hdriRoot = root / "assets" / "HDRIs";
         if (params.preset == TreePreset::Conifer) {
-            hdriPath = hdriRoot / "conifer" / "autumn_park_1k.png";
+            hdriPath = hdriRoot / "conifer" / "autumn_park_2k.png";
         }
         else {
-            hdriPath = hdriRoot / "deciduous" / "belfast_sunset_1k.png";
+            hdriPath = hdriRoot / "deciduous" / "belfast_sunset_2k.png";
         }
 
         std::cout << "Loading HDRI from:\n" << hdriPath << "\n";
@@ -553,19 +553,19 @@ int main(int argc, char** argv) {
 
     params.maxLenToRadius = 14.0f;   // fine
 
-    params.minBranchSpacing = 1;   // IMPORTANT: 2 will kill most of your grammar's branches
+    params.minBranchSpacing = 1;   // 2 will kills most branches!!!!!!
     params.maxBranchesPerNode = 128;   // start generous
 
-    params.branchRadiusDecay = 0.75f;   // optional but helps preserve twig thickness
+    params.branchRadiusDecay = 0.75f;   // helps preserve twig thickness
     params.branchLengthDecay = 0.85f;   // longer sub-branches than 0.55
-    params.twigLengthBoost = 0.15f;    // 0.30 shortens twigs a lot -> looks �fuzzy� and cramped
+    params.twigLengthBoost = 0.15f;    // 0.30 shortens twigs a lot -> looks fuzzy and cramped
 
     params.angleJitterDeg = 17.0f;    // less random-looking noise
 
     params.lengthJitterFrac = 0.08f; // more consistent segment lengths
-    params.radiusJitterFrac = 0.06f; // less �sparkly� thickness noise
+    params.radiusJitterFrac = 0.06f; // less sparkly thickness noise
 
-    params.branchRollJitterDeg = 35.0f; // 90 makes distribution look chaotic; phyllotaxis already spreads 360�
+    params.branchRollJitterDeg = 35.0f; // 90 makes distribution look chaotic; phyllotaxis already spreads 360
     params.branchPitchMinDeg = 15.0f;
     params.branchPitchMaxDeg = 50.0f;   // better 3D crown without relying on huge roll jitter
 
@@ -573,7 +573,7 @@ int main(int argc, char** argv) {
     params.pruneRadius = 0.0020f;       // prune more of the ultra-fine structural recursion (reduces clutter)
 
     params.minRadius = 0.0016f;         // draw fewer micro-twigs
-    params.minLength = 0.010f;          // avoid tiny �hair� segments
+    params.minLength = 0.010f;          // avoid tiny hair segments
 
     params.enableCrookedness = true;
 
@@ -594,7 +594,7 @@ int main(int argc, char** argv) {
 
     //new conifer params
     if (params.preset == TreePreset::Conifer) {
-        // Keep your junctio/n spheres if you like the look (optional)
+
         params.addSpheres = true;
 
         // Spruce: enough iterations for tufting, without blowing up too hard
@@ -641,7 +641,7 @@ int main(int argc, char** argv) {
         params.minBranchSpacing = 1;
 
         // Optional skipping (creates gaps, reduces “uniform cone” feeling)
-        params.enableBranchSkipping = false;
+        params.enableBranchSkipping = false; // too inconsistent atm
         params.branchSkipMaxProb = 0.15f;
         params.branchSkipStartDepth = 3;
         params.minRadiusForBranch = 0.010f;
@@ -666,7 +666,7 @@ int main(int argc, char** argv) {
         params.minRadius = 0.0012f;
         params.minLength = 0.012f;
 
-        // Crookedness optional (leave off for now)
+        // Crookedness
         params.enableCrookedness = false;
         params.crookStrength = 0.5f;
         params.crookAccelDeg = 20.2f;
@@ -742,16 +742,13 @@ int main(int argc, char** argv) {
 // Hill mesh (Part 2) GPU upload
 // ---------------------------
     if (envMode) {
-        // NOTE: This assumes you already loaded:
-        // GLuint texGroundAlbedo, texGroundNormal, texGroundRough;
-        // and you already implemented BuildHillVertices(...) above main().
 
-        // Put ground near the tree base (your tree vertices already include baseTranslation)
+        // Put ground near the tree base 
         float baseY = params.baseTranslation.y - 0.20f;
 
         // Size/resolution (tweak later)
-        float halfSize = 30.0f;   // bigger plane, we’ll hide edges with mask
-        int   gridN = 120;     // smoother mound
+        float halfSize = 100.0f;   // 
+        int   gridN = 240;     // smoother mound
 
         // UVBigger numbers = fewer repeats (less tiling)
         float uvWorldU = (params.preset == TreePreset::Conifer) ? 12.0f : 14.0f;
@@ -770,7 +767,7 @@ int main(int argc, char** argv) {
             hillVerts.data(),
             GL_STATIC_DRAW);
 
-        // Same attribute layout as your tree:
+        // Same attribute layout as tree:
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(VertexPN), (void*)offsetof(VertexPN, pos));
 
@@ -851,7 +848,7 @@ int main(int argc, char** argv) {
         uniform float uMacroFreq;       // e.g. 0.12
         uniform float uMacroStrength;   // e.g. 0.20
         uniform float uUVWarp;          // e.g. 0.02
-        uniform float uBarkTwist;       // e.g. 0.08 (optional)
+        uniform float uBarkTwist;       // e.g. 0.08 
 
         uniform bool  uUseAltTiling;     // ground: ON, tree: OFF
         uniform float uAltTilingMix;     // 0..1
@@ -895,10 +892,10 @@ int main(int argc, char** argv) {
         
             vec2 uv = vUV;
         
-            // optional subtle spiral twist (tree bark)
+            // subtle spiral twist (tree bark)
             uv.x += uv.y * uBarkTwist;
         
-            // macro noise from world pos (already in your shader)
+            // macro noise from world pos (already in shader)
             float m  = noise3(vWorldPos * uMacroFreq);
             float m2 = noise3((vWorldPos + vec3(17.0, 5.0, 11.0)) * uMacroFreq);
             vec2 warp = vec2(m, m2) - 0.5;
@@ -1149,8 +1146,7 @@ int main(int argc, char** argv) {
             glUniform1f(uSkyExposureLoc, exposure);
             glUniform1f(uSkyGammaLoc, 2.2f);
 
-            // You said you already flipped it correctly, so keep this OFF by default.
-            // Turn to 1 if it becomes inverted again.
+            // Invert skybox.
             glUniform1i(uSkyFlipVLoc, 0);
 
             glActiveTexture(GL_TEXTURE3);
@@ -1208,8 +1204,8 @@ int main(int argc, char** argv) {
             GLint locGroundCutoff = glGetUniformLocation(prog, "uGroundCutoff");
 
             glUniform1i(locUseGroundMask, 1);
-            glUniform1f(locGroundRadius, 14.0f);
-            glUniform1f(locGroundFade, 6.0f);
+            glUniform1f(locGroundRadius, 50.0f);
+            glUniform1f(locGroundFade, 18.0f);
 
             // Anti-tiling (ground only)
             glUniform1i(glGetUniformLocation(prog, "uUseAltTiling"), 1);

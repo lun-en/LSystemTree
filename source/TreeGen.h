@@ -9,9 +9,9 @@ struct VertexPN {
     glm::vec3 pos;
     glm::vec3 normal;
     glm::vec2 uv;
-    glm::vec4 tangent; // xyz = tangent, w = sign (usually +1 or -1)
+    glm::vec4 tangent; // xyz = tangent, w = sign 
 };
-//NEW: Tree presets
+// Tree presets
 enum class TreePreset
 {
     Deciduous,
@@ -42,19 +42,19 @@ struct TreeParams {
 
     glm::vec3 baseTranslation = glm::vec3(0.0f, -3.0f, 0.0f);
 
-    // NEW: reproducibility + organic variation
+    // reproducibility + organic variation
     std::uint32_t seed = std::random_device{}();
 
     float angleJitterDeg = 10.0f;  // jitter applied to yaw/pitch/roll ops
     float lengthJitterFrac = 0.15f;  // +/- fraction per segment
     float radiusJitterFrac = 0.10f;  // +/- fraction per segment
 
-    // NEW: distribute branch planes around trunk
+    // distribute branch planes around trunk
     bool  usePhyllotaxisRoll = true;
     float phyllotaxisDeg = 137.5f; // golden-angle-ish divergence
     float branchRollJitterDeg = 20.0f;
 
-    // NEW: termination thresholds (prevents tiny noisy twigs)
+    // termination thresholds (prevents tiny noisy twigs)
     float minRadius = 0.01f;
     float minLength = 0.05f;
 
@@ -64,33 +64,33 @@ struct TreeParams {
     float branchSkipMaxProb = 0.75f; // upper bound skip probability
     float minRadiusForBranch = 0.035f;
 
-    // NEW: prevent branch bunching
+    // prevent branch bunching
     int   minBranchSpacing = 1;      // minimum number of F segments between branch-starts on the same path
     int   maxBranchesPerNode = 4;    // cap how many '[' we allow before the next F
 
     // Depth scaling (0..1 over this depth range)
     int   depthFullEffect = 10;    // after this depth, depth-bias is at full strength
 
-    // Make branches pop into true 3D at each branch start (helps �oak canopy� later too)
-    float branchPitchMinDeg = 10.0f; // pitch down/up range depends on your axis; this creates Z spread
+    // Make branches pop into true 3D at each branch start (helps oak canopy later too)
+    float branchPitchMinDeg = 10.0f; // pitch down/up range depends on axis; this creates Z spread
     float branchPitchMaxDeg = 35.0f;
 
     // Tropism (first attempt)
-    bool  enableTropism = false;               // turn on now (you can toggle in main.cpp)
+    bool  enableTropism = false;               // turn on now
     glm::vec3 tropismDir = glm::vec3(0, -1, 0);  // gravity-ish
     float tropismStrength = 0.015f;             // keep SMALL at first
     float tropismThinBoost = 0.08f;              // how much thin branches bend more
 
-    // NEW: child branches should get shorter faster than trunk segments
+    // child branches should get shorter faster than trunk segments
     float branchLengthDecay = 0.75f;     // applied when entering '[' (separate from lengthDecayF)
 
-    // NEW: make deep twigs shrink faster (depth-based)
+    // make deep twigs shrink faster (depth-based)
     float twigLengthBoost = 0.30f;       // 0..1, higher = shorter twigs at high depth
 
-    // NEW: hard cap to prevent �long noodles� when radius is tiny
+    // hard cap to prevent long noodles when radius is tiny
     float maxLenToRadius = 12.0f;        // len <= maxLenToRadius * radius
 
-    // NEW: pruning control (separate from draw cutoff)
+    // pruning control (separate from draw cutoff)
     bool  enableRadiusPruning = false;  // start OFF to get twigs back
     float pruneRadius = 0.0006f;        // much smaller than minRadius
 

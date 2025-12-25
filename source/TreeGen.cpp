@@ -16,10 +16,10 @@ struct TurtleState {
     float radius;
     float length;
     int   depth;        // global-ish segment count along current path
-    int   localDepth;   // NEW: segments since the last '[' (branch start)
-    int branchesAtNode;   // NEW
+    int   localDepth;   // segments since the last '[' (branch start)
+    int branchesAtNode;   
 
-    float barkV = 0.0f;     // NEW: running V (world units) for bark mapping
+    float barkV = 0.0f;     // running V (world units) for bark mapping
     
     // Crookedness state (bounded “wiggle” angles)
     float crookYaw = 0.0f;
@@ -194,7 +194,7 @@ static void appendSphere(std::vector<VertexPN>& out,
     }
 }
 
-//NEW: helper function preset Grammar
+// helper function preset Grammar
 static void SetupDeciduousGrammar(LSystem& lsys, const TreeParams& p)
 {
     //set the deciduoud Tree grammar
@@ -228,13 +228,13 @@ static void SetupDeciduousGrammar(LSystem& lsys, const TreeParams& p)
     lsys.addRule('X', "F[+A][-A]X", 1.30f);
     //lsys.addRule('X', "F[\\X][/X]", 0.55f);
 
-    // NEW: TWO NODES per rewrite -> more lower-trunk scaffolds without affecting the top
+    //  TWO NODES per rewrite -> more lower-trunk scaffolds without affecting the top
     lsys.addRule('X', "F[+A][-A]F[+A][-A]X", 0.95f);
 
     // occasional 3-scaffold node (still okay with maxBranchesPerNode=4)
     lsys.addRule('X', "F[+A][-A][|A]X", 0.70f);
 
-    // a tiny bit of �plain trunk� so it�s not perfectly periodic
+    // a tiny bit of plain trunk so it's not perfectly periodic
     lsys.addRule('X', "FX", 0.06f);
     lsys.addRule('X', "FFX", 0.03f);
 
@@ -244,7 +244,7 @@ static void SetupDeciduousGrammar(LSystem& lsys, const TreeParams& p)
     // rare end
     //lsys.addRule('X', "", 0.005f);
 
-    // --- T: UPPER trunk bud (keep your current look here) ---
+    // --- T: UPPER trunk bud ---
     lsys.addRule('T', "F[+A][-A]T", 1.40f);
     lsys.addRule('T', "F[+A][-A][&A][^A]T", 0.80f);
     lsys.addRule('T', "FT", 0.10f);
@@ -283,7 +283,7 @@ static void SetupDeciduousGrammar(LSystem& lsys, const TreeParams& p)
     lsys.addRule('b', "F[-b]Y", 0.40f);
     lsys.addRule('b', "F", 0.80f);
 
-    // --- C: crown bud (adds �air gaps� via FC so it�s less bunched-up) ---
+    // --- C: crown bud (adds air gaps via FC so it's less bunched-up) ---
     lsys.addRule('C', "FC", 0.85f);  // spacing / structure without spawning new twigs every step
     lsys.addRule('C', "F[+Y][-Y]C", 0.45f);
     lsys.addRule('C', "F[\\Y][/Y]C", 0.25f);
@@ -511,10 +511,10 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
     };
 
     // Helper: crookedness (bounded, mean-reverting “wiggle” -> oak-like zig-zag)
-// Uses existing params:
-//   p.crookStrength  : overall intensity multiplier
-//   p.crookAccelDeg  : noise amplitude per segment (degrees)
-//   p.crookDamping   : 0..1, higher = smoother / slower changes (try 0.85~0.95)
+    // Uses existing params:
+    //   p.crookStrength  : overall intensity multiplier
+    //   p.crookAccelDeg  : noise amplitude per segment (degrees)
+    //   p.crookDamping   : 0..1, higher = smoother / slower changes (try 0.85~0.95)
     auto applyCrookedness = [&]() {
         if (!p.enableCrookedness) return;
 
@@ -522,7 +522,7 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
         // thick01=1 near trunk, ->0 on tiny twigs
         float thick01 = glm::clamp(cur.radius / std::max(1e-6f, p.baseRadius), 0.0f, 1.0f);
 
-        // Reduce effect on tiny twigs so you don't get “hair noise”
+        // Reduce effect on tiny twigs
         float twigScale = glm::mix(0.25f, 1.0f, thick01);
 
         // Final strength for this segment
@@ -549,7 +549,7 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
         cur.crookPitchPrev = cur.crookPitch;
         cur.crookRollPrev = cur.crookRoll;
 
-        // Apply around LOCAL axes (your rotateLocal already rotates about the turtle position)
+        // Apply around LOCAL axes
         rotateLocal(-dYaw * strength, glm::vec3(0, 0, 1)); // yaw
         rotateLocal(-dPitch * strength, glm::vec3(1, 0, 0)); // pitch
         rotateLocal(-dRoll * strength, glm::vec3(0, 1, 0)); // roll (around heading)
@@ -623,8 +623,8 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
                 radiusDecayThisStep = glm::mix(decayNearBase, decayNearTop, s);
             }
 
-            // --- NEW: scaffold-only taper curve ---
-            // A "scaffold" in your interpreter is a first-level branch off the trunk,
+            // --- scaffold-only taper curve ---
+            // A "scaffold" in the interpreter is a first-level branch off the trunk,
             // which corresponds to being inside exactly one '[' ... ']' nesting level.
             if (p.enableScaffoldTaperCurve && stack.size() == 1) {
 
@@ -727,7 +727,7 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
             break;
 
 
-            // Yaw around local Z (matches your existing convention)
+            // Yaw around local Z
         case '+': {
             float a = angleWithDepth(p.branchAngleDeg, cur.depth);
             rotateLocal(+a, glm::vec3(0, 0, 1));
@@ -773,7 +773,7 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
             if (!stack.empty() && cur.localDepth < p.minBranchSpacing)
                 skip = true;
 
-            // Per-node cap: don�t allow �spray� of many branches from the same spot
+            // Per-node cap: don't allow spray of many branches from the same spot
             if (cur.branchesAtNode >= p.maxBranchesPerNode) skip = true;
 
             if (p.enableBranchSkipping && !stack.empty()) {
@@ -830,26 +830,18 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
             cur.crookYaw = cur.crookPitch = cur.crookRoll = 0.0f;
             cur.crookYawPrev = cur.crookPitchPrev = cur.crookRollPrev = 0.0f;
 
-            // distribute branch planes around trunk  (MOVE THIS UP)
-            /*if (p.usePhyllotaxisRoll) {
-                float roll = p.phyllotaxisDeg * float(branchIndex++);
-                roll += randRange(-p.branchRollJitterDeg, +p.branchRollJitterDeg);
-                rotateLocal(glm::radians(roll), glm::vec3(0, 1, 0)); // roll around heading
-            }*/
-
             // distribute branch planes around trunk
             if (p.usePhyllotaxisRoll) {
 
                 float rollDeg = 0.0f;
 
                 if (parentIsTrunk) {
-                    // ---- TRUNK scaffolds: enforce even 360� distribution ----
+                    // ---- TRUNK scaffolds: enforce even 360 distribution ----
                     // Try 12 or 16 bins. 12 is a good start.
                     const int   bins = 12;
                     const float binSize = 360.0f / float(bins);
 
-                    // trunkBranchIndex must be a separate counter (uint32_t) you keep outside the loop
-                    // (If you don�t have it yet, add: std::uint32_t trunkBranchIndex = 0; near branchIndex)
+                    // trunkBranchIndex must be a separate counter (uint32_t) outside the loop
                     int bin = int(trunkBranchIndex % bins);
 
                     // Optional: spread multiple branches spawned at the exact same trunk node
@@ -865,7 +857,7 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
 
                 }
                 else {
-                    // ---- non-trunk branches: keep your phyllotaxis/jitter behavior ----
+                    // ---- non-trunk branches: keep phyllotaxis/jitter behavior ----
                     rollDeg = p.phyllotaxisDeg * float(branchIndex++);
                     rollDeg += randRange(-p.branchRollJitterDeg, +p.branchRollJitterDeg);
                 }
@@ -873,7 +865,7 @@ std::vector<VertexPN> BuildTreeVertices(const TreeParams& p)
                 rotateLocal(glm::radians(rollDeg), glm::vec3(0, 1, 0));
             }
 
-            // NEW: pitch kick so branches spread in true 3D  (MOVE THIS DOWN)
+            // pitch kick so branches spread in true 3D  (MOVE THIS DOWN)
             float pitch = randRange(p.branchPitchMinDeg, p.branchPitchMaxDeg);
             if (rand01() < 0.5f) pitch = -pitch;
             rotateLocal(glm::radians(pitch), glm::vec3(1, 0, 0));
